@@ -1,0 +1,1 @@
+This is a basic template to write your own app with pyqt6 (Python with Qt v6). It may help you with a smooth start. Just implement your own central widget (CentralWidget.py) inheritanced from QCentralWidget. Note the class MainWindow to programm everything within the QMainWindow.
