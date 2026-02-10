@@ -129,7 +129,7 @@ class CentralWidget(QWidget):
 
         # Text
         text_label = QLabel(text)
-        text_label.setFont(QFont("Arial", 16, QFont.Weight.Bold))
+        text_label.setFont(QFont("Open Sans", 16, QFont.Weight.Bold))
         text_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         # Text explizit weiß setzen
         text_label.setStyleSheet("color: white; background-color: transparent; border: none;")
