@@ -1,4 +1,4 @@
-#Skript wurde von Daniel Popp und Mustafa Demiral geschrieben
+#Skript wurde von Daniel Popp und Mustafa Demiral geschrieben#
 from PyQt6.QtWidgets import (QWidget, QPushButton, QGridLayout, QVBoxLayout,
                              QLabel, QHBoxLayout, QSizePolicy)
 from PyQt6.QtCore import Qt
