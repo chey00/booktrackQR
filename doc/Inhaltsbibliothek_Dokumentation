@@ -3,5 +3,9 @@
 
 Hier finden Sie alle Dateien der Dokumentation der Bücher App. 
 
-README.md 
+README.md                               # enhält die Funktionsbeschreibung der BücherAPP
+
+Word_Koverter_to_MArkdown.py            # wandelt eine Word Datei ( .docx ) in eine Markdwon datei ( .md ) um.
+
+
 
