@@ -39,7 +39,7 @@ class CentralWidget(QWidget):
 #Mustafa
         # 2. Titel (Mitte) - Sicherstellen, dass er dunkel ist
         title_label = QLabel("BooktrackQR")
-        title_label.setFont(QFont("Arial", 36, QFont.Weight.Bold))
+        title_label.setFont(QFont("Helvetica", 50, QFont.Weight.Bold))
         # Hier erzwingen wir nochmal explizit die Textfarbe
         title_label.setStyleSheet("color: #333333; background-color: transparent; border: none;")
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -47,7 +47,7 @@ class CentralWidget(QWidget):
 
         # 3. Schullogo (Rechts)
         logo_label = QLabel()
-        pixmap = QPixmap("../pictures/technikerschule_logo.png")
+        pixmap = QPixmap("../pic/technikerschule_logo.png")
         if not pixmap.isNull():
             # Logo skalieren
             logo_label.setPixmap(
@@ -73,10 +73,10 @@ class CentralWidget(QWidget):
 #Mustafa
         # Konfiguration
         buttons_config = [
-            ("AUSLEIHE", "pictures/icon_ausleihe.png", "#8DBF42", 0, 0), #https://www.flaticon.com/free-icon-font/book-plus_15399184?k=1770709197884
-            ("RÜCKGABE", "pictures/icon_rueckgabe.png", "#E57368", 0, 1), #https://www.flaticon.com/free-icon-font/guide-alt_15399213?page=1&position=96&term=book&origin=search&related_id=15399213
-            ("BUCHVERWALTUNG", "pictures/icon_buch.png", "#5CB1D6", 1, 0), #https://www.flaticon.com/free-icon-font/book-circle-arrow-up_9585307?term=book+arrow&related_id=9585307
-            ("SCHÜLERVERWALTUNG", "pictures/icon_user.png", "#F1BD4D", 1, 1) #https://www.flaticon.com/free-icon-font/user-gear_9844201
+            ("AUSLEIHE", "../pic/icon_ausleihe.png", "#8DBF42", 0, 0), #https://www.flaticon.com/free-icon-font/book-plus_15399184?k=1770709197884
+            ("RÜCKGABE", "../pic/icon_rueckgabe.png", "#E57368", 0, 1), #https://www.flaticon.com/free-icon-font/guide-alt_15399213?page=1&position=96&term=book&origin=search&related_id=15399213
+            ("BUCHVERWALTUNG", "../pic/icon_buch.png", "#5CB1D6", 1, 0), #https://www.flaticon.com/free-icon-font/book-circle-arrow-up_9585307?term=book+arrow&related_id=9585307
+            ("SCHÜLERVERWALTUNG", "../pic/icon_user.png", "#F1BD4D", 1, 1), #https://www.flaticon.com/free-icon-font/user-gear_9844201
         ]
 #Daniel
         for text, icon_path, color, row, col in buttons_config:
@@ -99,7 +99,7 @@ class CentralWidget(QWidget):
 
         # Layout im Button
         btn_layout = QVBoxLayout(btn)
-        btn_layout.setContentsMargins(10, 20, 10, 20)
+        btn_layout.setContentsMargins(10, 50, 10, 20)
         btn_layout.setSpacing(15)
 
         # Icon Label
