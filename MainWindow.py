@@ -10,5 +10,7 @@ class MainWindow(QMainWindow):
         central_widget = CentralWidget(self)
 
         self.setCentralWidget(central_widget)
-
-        self.setWindowTitle("Change me!")
+#Mustafa
+        self.setWindowTitle("BooktrackQR")
+        self.setMinimumSize(900, 700)
+        self.setStyleSheet("QWidget { background-color: white; }")
