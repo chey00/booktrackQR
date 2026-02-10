@@ -70,15 +70,15 @@ class CentralWidget(QWidget):
         # --- BUTTON GRID ---
         grid = QGridLayout()
         grid.setSpacing(25)
-
+#Mustafa
         # Konfiguration
         buttons_config = [
-            ("AUSLEIHE", "pictures/icon_ausleihe.png", "#8DBF42", 0, 0),
-            ("RÜCKGABE", "pictures/icon_rueckgabe.png", "#E57368", 0, 1),
-            ("BUCHVERWALTUNG", "pictures/icon_buch.png", "#5CB1D6", 1, 0),
-            ("SCHÜLERVERWALTUNG", "pictures/icon_user.png", "#F1BD4D", 1, 1)
+            ("AUSLEIHE", "pictures/icon_ausleihe.png", "#8DBF42", 0, 0), #https://www.flaticon.com/free-icon-font/book-plus_15399184?k=1770709197884
+            ("RÜCKGABE", "pictures/icon_rueckgabe.png", "#E57368", 0, 1), #https://www.flaticon.com/free-icon-font/guide-alt_15399213?page=1&position=96&term=book&origin=search&related_id=15399213
+            ("BUCHVERWALTUNG", "pictures/icon_buch.png", "#5CB1D6", 1, 0), #https://www.flaticon.com/free-icon-font/book-circle-arrow-up_9585307?term=book+arrow&related_id=9585307
+            ("SCHÜLERVERWALTUNG", "pictures/icon_user.png", "#F1BD4D", 1, 1) #https://www.flaticon.com/free-icon-font/user-gear_9844201
         ]
-
+#Daniel
         for text, icon_path, color, row, col in buttons_config:
             btn = self.create_centered_button(text, icon_path, color)
             grid.addWidget(btn, row, col)
@@ -118,7 +118,7 @@ class CentralWidget(QWidget):
         text_label.setFont(QFont("Arial", 16, QFont.Weight.Bold))
         text_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         # WICHTIG: Text im Button muss WEISS bleiben
-        text_label.setStyleSheet("color: black; background-color: transparent; border: none;")
+        text_label.setStyleSheet("color: white; background-color: transparent; border: none;")
         btn_layout.addWidget(text_label)
 
         # Styling des Buttons selbst
