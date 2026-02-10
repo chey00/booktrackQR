@@ -1,3 +1,10 @@
+
+# Das ist der Code um QR Codes zu enerieren.
+#  Dieser Code muss noch in das spätere Bücher App Projekt eingefügt werden.
+
+# 10.02.26 // Denis; Luis 
+
+
 import qrcode
 
 features = qrcode.QRCode(version = 1, box_size = 40, border = 3 )
