@@ -47,7 +47,7 @@ class CentralWidget(QWidget):
 
         # 3. Schullogo (Rechts)
         logo_label = QLabel()
-        pixmap = QPixmap("pictures/technikerschule_logo.png")
+        pixmap = QPixmap("../pictures/technikerschule_logo.png")
         if not pixmap.isNull():
             # Logo skalieren
             logo_label.setPixmap(
