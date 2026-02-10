@@ -14,16 +14,6 @@ class CentralWidget(QWidget):
         # WICHTIG: Damit der Hintergrund gezeichnet wird!
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
 
-        # 1. FESTES DESIGN (Helles Theme erzwingen)
-        # Background Weiß, Text Dunkelgrau
-        self.setStyleSheet("""
-            QWidget {
-                background-color: #FFFFFF;
-                color: #333333;
-                font-family: Arial;
-            }
-        """)
-
         # Hauptlayout (Vertikal)
         main_layout = QVBoxLayout()
 
@@ -89,9 +79,7 @@ class CentralWidget(QWidget):
         self.setLayout(main_layout)
 
     def create_centered_button(self, text, icon_path, color):
-        """
-        Erstellt die Buttons.
-        """
+        #Erstellt die Buttons.
         btn = QPushButton()
         btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         btn.setMinimumSize(250, 180)
@@ -129,7 +117,6 @@ class CentralWidget(QWidget):
                 border: none;
             }}
             QPushButton:hover {{
-                background-color: {color}dd; 
                 border: 3px solid #333333; 
             }}
             QPushButton:pressed {{
