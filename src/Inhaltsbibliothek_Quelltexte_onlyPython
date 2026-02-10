@@ -15,9 +15,9 @@ Hier sind nur die python Dateien der App enhalten.
 
 • CentralWidget.py
 
-• 
+• QR_Generator                     # Erstellt einen QR-Code 
 
-•
+• QR_Generator_DuplikatKiller      # überprüft mit einer If-Abfrage ob doppelte QR-Codes erstellt wurden. 
 
 •
 
