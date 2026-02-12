@@ -21,7 +21,7 @@ SET FOREIGN_KEY_CHECKS = 1;
 
 -- =========================================================
 -- PROGRAMMIERT VON BATUHAN
--- Teil: Datenbank-Schema / Tabellen / Primary Keys / Foreign Keys / Constraints
+-- Teil: Tabellen / Primary Keys / Foreign Keys / Constraints
 -- =========================================================
 
 CREATE TABLE Schuljahr (
