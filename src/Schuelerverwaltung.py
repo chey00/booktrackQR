@@ -1,16 +1,15 @@
 # ------------------------------------------------------------------------------
 # Projekt: BooktrackQR
 # Modul: SchuelerverwaltungWidget (GUI Design & Validierungs-Logik)
-# Stand: GUI mit TableWidget und Validierungs-Dialog
+# Stand: GUI mit TableWidget, Validierungs-Dialog und Zurück-Button
 # ------------------------------------------------------------------------------
 
 import os
 from PyQt6.QtWidgets import (QWidget, QPushButton, QVBoxLayout,
                              QLabel, QHBoxLayout, QTableWidget, QTableWidgetItem,
-                             QHeaderView, QLineEdit, QComboBox, QDialog, QFormLayout,
-                             QFrame)
+                             QHeaderView, QLineEdit, QComboBox, QDialog, QFormLayout)
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont, QPixmap, QIcon
+from PyQt6.QtGui import QFont, QPixmap
 
 
 class StudentDialog(QDialog):
@@ -59,7 +58,7 @@ class StudentDialog(QDialog):
         self.btn_save = QPushButton("Speichern")
 
         self.btn_cancel.clicked.connect(self.reject)
-        self.btn_save.clicked.connect(self.validate_and_save)  # Eigene Validierungs-Methode
+        self.btn_save.clicked.connect(self.validate_and_save)
 
         # Styling der Buttons im Modal
         self.btn_save.setStyleSheet("""
@@ -77,27 +76,25 @@ class StudentDialog(QDialog):
         layout.addLayout(btn_layout)
 
     def validate_and_save(self):
-        """Prüft, ob die Klasse ausgewählt wurde (Typischer Fehlerfall der User Story)"""
+        """Prüft, ob die Klasse ausgewählt wurde (Typischer Fehlerfall)"""
         if self.combo_klasse.currentText() == "Bitte wählen...":
-            # Fehlerfall: Roter Rahmen und Fehlermeldung anzeigen
             self.combo_klasse.setStyleSheet("border: 2px solid #D32F2F; border-radius: 3px; padding: 2px;")
             self.error_label.show()
         else:
-            # Alles OK: Fehler verstecken und Dialog erfolgreich schließen
             self.combo_klasse.setStyleSheet("")
             self.error_label.hide()
-            self.accept()  # Schließt den Dialog mit "Accepted" Status
+            self.accept()
 
 
 class SchuelerverwaltungWidget(QWidget):
     def __init__(self, parent=None):
         super(SchuelerverwaltungWidget, self).__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setStyleSheet("background-color: white;")  # Grundhintergrund
+        self.setStyleSheet("background-color: white;")
 
         main_layout = QVBoxLayout()
 
-        # --- HEADER BEREICH (Kopie vom CentralWidget für Konsistenz) ---
+        # --- HEADER BEREICH ---
         header_layout = QHBoxLayout()
         dummy_left = QWidget()
         dummy_left.setFixedWidth(200)
@@ -116,8 +113,6 @@ class SchuelerverwaltungWidget(QWidget):
         if not pixmap.isNull():
             logo_label.setPixmap(
                 pixmap.scaled(200, 80, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-        else:
-            logo_label.setText("Logo nicht gefunden")
         logo_label.setFixedWidth(200)
         logo_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         header_layout.addWidget(logo_label)
@@ -133,46 +128,42 @@ class SchuelerverwaltungWidget(QWidget):
         # Seiten-Titel
         page_title = QLabel("Schülerverwaltung")
         page_title.setFont(QFont("Open Sans", 24, QFont.Weight.Bold))
-        page_title.setStyleSheet("color: #F1BD4D; margin-left: 10px;")  # Gelb/Orange vom Hauptmenü
+        page_title.setStyleSheet("color: #F1BD4D; margin-left: 10px;")
         main_layout.addWidget(page_title)
 
-        # --- ACTION BAR (Suche, Filter, Buttons) ---
+        # --- ACTION BAR ---
         action_layout = QHBoxLayout()
         action_layout.setContentsMargins(10, 10, 10, 10)
 
-        # Suche
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("🔍 Suche nach Name...")
         self.search_input.setFixedWidth(300)
         self.search_input.setStyleSheet("padding: 8px; border: 1px solid #CCC; border-radius: 4px;")
         action_layout.addWidget(self.search_input)
 
-        # Filter
         self.filter_combo = QComboBox()
         self.filter_combo.addItems(["Filter: Alle Klassen", "10A", "10B", "11A", "11B"])
         self.filter_combo.setStyleSheet("padding: 8px; border: 1px solid #CCC; border-radius: 4px;")
         action_layout.addWidget(self.filter_combo)
 
-        action_layout.addStretch()  # Schiebt die Buttons nach rechts
+        action_layout.addStretch()
 
-        # Import Button
         btn_import = QPushButton("📤 CSV Importieren")
         btn_import.setStyleSheet("padding: 8px 15px; border: 1px solid #CCC; border-radius: 4px; background: white;")
         action_layout.addWidget(btn_import)
 
-        # Hinzufügen Button (Primär)
         btn_add = QPushButton("➕ Schüler hinzufügen")
         btn_add.setStyleSheet("""
             QPushButton { background-color: #F1BD4D; color: white; padding: 8px 15px; border: none; border-radius: 4px; font-weight: bold;}
             QPushButton:hover { background-color: #D9A840; }
         """)
-        btn_add.clicked.connect(self.open_student_dialog)  # Verbindet Button mit dem Dialog
+        btn_add.clicked.connect(self.open_student_dialog)
         action_layout.addWidget(btn_add)
 
         main_layout.addLayout(action_layout)
 
         # --- TABELLE ---
-        self.table = QTableWidget(0, 5)  # 0 Zeilen (werden gefüllt), 5 Spalten
+        self.table = QTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels(["ID", "Nachname", "Vorname", "Klasse", "Aktionen"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table.setAlternatingRowColors(True)
@@ -183,8 +174,30 @@ class SchuelerverwaltungWidget(QWidget):
         """)
         main_layout.addWidget(self.table)
 
-        # Testdaten laden
         self.load_dummy_data()
+
+        # --- NEU: FOOTER BEREICH (ZURÜCK BUTTON) ---
+        footer_layout = QHBoxLayout()
+        footer_layout.addStretch()  # Drückt den Button ganz nach rechts
+
+        self.btn_back = QPushButton("⬅ Zurück zum Hauptmenü")
+        self.btn_back.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_back.setStyleSheet("""
+            QPushButton {
+                background-color: #E0E0E0;
+                color: #333333;
+                padding: 10px 20px;
+                border: none;
+                border-radius: 6px;
+                font-weight: bold;
+                font-size: 14px;
+            }
+            QPushButton:hover { background-color: #CCCCCC; }
+        """)
+        footer_layout.addWidget(self.btn_back)
+
+        main_layout.addSpacing(10)  # Etwas Abstand zwischen Tabelle und Button
+        main_layout.addLayout(footer_layout)
 
         main_layout.setContentsMargins(50, 30, 50, 50)
         self.setLayout(main_layout)
@@ -194,15 +207,12 @@ class SchuelerverwaltungWidget(QWidget):
         return os.path.join(base_dir, "..", "pic", filename)
 
     def open_student_dialog(self):
-        """Öffnet das Modal zum Erstellen/Bearbeiten und fängt das Ergebnis ab."""
         dialog = StudentDialog(self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            # Hier würde später die Datenbank-Logik greifen
             print(
                 f"Schüler {dialog.input_vorname.text()} {dialog.input_nachname.text()} für Klasse {dialog.combo_klasse.currentText()} gespeichert!")
 
     def load_dummy_data(self):
-        """Füllt die Tabelle mit Testdaten zur Visualisierung."""
         dummy_students = [
             ("101", "Müller", "Max", "10A"),
             ("102", "Schmidt", "Lisa", "10A"),
@@ -213,10 +223,9 @@ class SchuelerverwaltungWidget(QWidget):
         for row_idx, student in enumerate(dummy_students):
             for col_idx, data in enumerate(student):
                 item = QTableWidgetItem(data)
-                item.setFlags(item.flags() ^ Qt.ItemFlag.ItemIsEditable)  # Zelle schreibgeschützt machen
+                item.setFlags(item.flags() ^ Qt.ItemFlag.ItemIsEditable)
                 self.table.setItem(row_idx, col_idx, item)
 
-            # Aktion-Buttons simulieren (Als reiner Text für das Mockup, später eigene Widgets)
             action_item = QTableWidgetItem("✏️ Bearbeiten | 🗑️ Löschen")
             action_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.table.setItem(row_idx, 4, action_item)
