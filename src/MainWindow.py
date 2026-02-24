@@ -5,7 +5,6 @@
 # Stand: GUI mit Logik
 # ------------------------------------------------------------------------------
 
-
 from PyQt6.QtWidgets import QMainWindow, QStackedWidget
 
 from CentralWidget import CentralWidget
@@ -34,8 +33,8 @@ class MainWindow(QMainWindow):
         # 4. Den Button aus dem Hauptmenü mit der Wechsel-Funktion verbinden
         self.main_menu_widget.btn_schueler.clicked.connect(self.zeige_schuelerverwaltung)
 #Ahmet
-        # Schülerverwaltung -> Hauptmenü (NEU)
-        self.schueler_widget.btn_back.clicked.connect(self.zeige_hauptmenue)  # <-- NEU
+        # Schülerverwaltung -> Hauptmenü
+        self.schueler_widget.btn_back.clicked.connect(self.zeige_hauptmenue)
 #Mustafa
     def zeige_schuelerverwaltung(self):
         """Wechselt zur Schülerverwaltung (Index 1)"""
