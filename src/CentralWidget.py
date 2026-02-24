@@ -93,6 +93,10 @@ class CentralWidget(QWidget):
             if text == "SCHÜLERVERWALTUNG":
                 self.btn_schueler = btn
 
+        # Jaclyn: Rückgabe Button connecten
+            if text == "RÜCKGABE":
+                self.btn_rueckgabe = btn
+
         main_layout.addLayout(grid)
         main_layout.setContentsMargins(50, 30, 50, 50)
         self.setLayout(main_layout)
