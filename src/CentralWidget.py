@@ -73,10 +73,10 @@ class CentralWidget(QWidget):
         # Mustafa: Button Konfiguration
         # Liste der Buttons: (Text, Bildname, Farbe, Zeile, Spalte)
         buttons_config = [
-            ("AUSLEIHE", "icon_ausleihe.png", "#8DBF42", 0, 0), #https://www.flaticon.com/free-icon-font/book-plus_15399184?k=1770709197884
-            ("RÜCKGABE", "icon_rueckgabe.png", "#E57368", 0, 1), #https://www.flaticon.com/free-icon-font/guide-alt_15399213?page=1&position=96&term=book&origin=search&related_id=15399213
-            ("BUCHVERWALTUNG", "icon_buch.png", "#5CB1D6", 1, 0), #https://www.flaticon.com/free-icon-font/book-circle-arrow-up_9585307?term=book+arrow&related_id=9585307
-            ("SCHÜLERVERWALTUNG", "icon_user.png", "#F1BD4D", 1, 1), #https://www.flaticon.com/free-icon-font/user-gear_9844201
+            ("AUSLEIHE", "icon_ausleihe.png", "#8DBF42", 0, 0),
+            ("RÜCKGABE", "icon_rueckgabe.png", "#E57368", 0, 1),
+            ("BUCHVERWALTUNG", "icon_buch.png", "#5CB1D6", 1, 0),
+            ("SCHÜLERVERWALTUNG", "icon_user.png", "#F1BD4D", 1, 1),
         ]
 
         # Daniel: Erstellung der Buttons im Grid
@@ -88,6 +88,10 @@ class CentralWidget(QWidget):
             btn = self.create_centered_button(text, full_img_path, color)
 
             grid.addWidget(btn, row, col)
+
+        # Mustafa: Variable speichern für das QStackedWidget im MainWindow
+            if text == "SCHÜLERVERWALTUNG":
+                self.btn_schueler = btn
 
         main_layout.addLayout(grid)
         main_layout.setContentsMargins(50, 30, 50, 50)
