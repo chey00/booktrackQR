@@ -1,7 +1,7 @@
 # ------------------------------------------------------------------------------
 # Projekt: BooktrackQR
 # Modul: BuchverwaltungWidget (Bestandsverwaltung GUI)
-# Autoren: Daniel Popp, Mustafa Demiral
+# Autoren: Batuhan Aktürk
 # Stand: Design an Gesamtprojekt angepasst (#5CB1D6)
 # ------------------------------------------------------------------------------
 
@@ -137,3 +137,4 @@ class BuchverwaltungWidget(QWidget):
                 border: 3px solid #444444;
             }}
         """
+
