@@ -3,7 +3,7 @@
 # Modul: BuchverwaltungWidget (GUI Design & Logik)
 # Autoren:
 # - Harun: Dialoge (DeleteConfirmDialog, BookDialog) + Validierung
-# - Batuhan: BuchverwaltungWidget (Layout, Tabelle, Filter, Bestand +/- , Aktionen)
+# - Batuhan: BuchverwaltungWidget (Layout, Tabelle, Sortierung, Bestand +/- , Aktionen)
 # ------------------------------------------------------------------------------
 
 import os
@@ -20,7 +20,6 @@ from PyQt6.QtGui import QFont, QPixmap
 # Harun: DeleteConfirmDialog
 # Zweck: Bestätigungsdialog, damit man Bücher nicht aus Versehen löscht.
 # ==============================================================================
-
 class DeleteConfirmDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -75,7 +74,6 @@ class DeleteConfirmDialog(QDialog):
 # - Bei Bearbeiten ist ISBN read-only (damit Schlüssel nicht geändert wird).
 # - validate_and_save() prüft Pflichtfelder + Bestand muss Zahl sein.
 # ==============================================================================
-
 class BookDialog(QDialog):
     def __init__(self, parent=None, book_data=None):
         super().__init__(parent)
@@ -194,7 +192,6 @@ class BookDialog(QDialog):
         self.input_stock.setStyleSheet("")
 
         ok = True
-
         if not isbn:
             self.input_isbn.setStyleSheet("border: 2px solid #D32F2F;")
             ok = False
@@ -222,11 +219,10 @@ class BookDialog(QDialog):
 # Batuhan: BuchverwaltungWidget
 # Zweck: Hauptseite der Buchverwaltung
 # - Header (Titel + Logo), Breadcrumbs, Titel
-# - Actionbar: Suche + Filter-Dropdown + Button "Buch hinzufügen"
+# - Actionbar: Suche + "Sortieren nach" Dropdown + Button "Buch hinzufügen"
 # - Tabelle mit Bestand (+/-) und Aktionen (Bearbeiten/Löschen)
-# - Filterlogik (Suche + Verlag-Filter)
+# - Suchlogik + Sortierlogik (Titel/Verlag/Auflage)
 # ==============================================================================
-
 class BuchverwaltungWidget(QWidget):
     def __init__(self, parent=None):
         super(BuchverwaltungWidget, self).__init__(parent)
@@ -279,7 +275,7 @@ class BuchverwaltungWidget(QWidget):
         main_layout.addWidget(page_title)
 
         # ================= ACTION BAR =================
-        # Hier: Suche + Filter-Dropdown + Button "Buch hinzufügen"
+        # Suche + Sortieren-nach Dropdown + Button "Buch hinzufügen"
         action_layout = QHBoxLayout()
         action_layout.setContentsMargins(10, 10, 10, 5)
         action_layout.setSpacing(15)
@@ -292,14 +288,14 @@ class BuchverwaltungWidget(QWidget):
         )
         action_layout.addWidget(self.search_input)
 
-        # Filter-Dropdown (Verlag)
-        self.filter_combo = QComboBox()
-        self.filter_combo.addItems(["Filter: Alle Verlage"])  # dynamisch ergänzt
-        self.filter_combo.setFixedWidth(200)
-        self.filter_combo.setStyleSheet(
+        # >>> ÄNDERUNG: statt Verlag-Filter jetzt Sortierungsauswahl <<<
+        self.sort_combo = QComboBox()
+        self.sort_combo.addItems(["Sortieren nach: ISBN", "Titel", "Verlag", "Auflage"])
+        self.sort_combo.setFixedWidth(200)
+        self.sort_combo.setStyleSheet(
             "padding: 10px; border: 1px solid #CCCCCC; border-radius: 6px; background-color: #FFFFFF; color: #333333; font-size: 14px;"
         )
-        action_layout.addWidget(self.filter_combo)
+        action_layout.addWidget(self.sort_combo)
 
         action_layout.addStretch()
 
@@ -315,7 +311,6 @@ class BuchverwaltungWidget(QWidget):
         main_layout.addLayout(action_layout)
 
         # ================= TABLE =================
-        # Spalten: ISBN, Titel, Verlag, Auflage, Bestand(+/-), Aktionen(Edit/Delete)
         self.table = QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels(["ISBN", "Titel", "Verlag", "Auflage", "Bestand", "Aktionen"])
         self.table.verticalHeader().setDefaultSectionSize(60)
@@ -334,7 +329,6 @@ class BuchverwaltungWidget(QWidget):
         """)
         self.table.verticalHeader().setVisible(False)
 
-        # Spaltenbreiten wie in Schülerverwaltung: gemischt Fixed/Stretch
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)   # ISBN
         self.table.setColumnWidth(0, 160)
@@ -354,7 +348,6 @@ class BuchverwaltungWidget(QWidget):
         main_layout.addWidget(self.table)
 
         # ================= DUMMY DATEN =================
-        # Datenformat: (ISBN, Titel, Verlag, Auflage, Bestand)
         self.dummy_books = [
             ("9783123456789", "Mathe 5", "Cornelsen", "2023", 150),
             ("9783120000001", "Deutsch 6", "Klett", "2022", 85),
@@ -368,21 +361,17 @@ class BuchverwaltungWidget(QWidget):
                 10 + i
             ))
 
-        # Filterwerte (Verlage) aus Daten generieren
-        self._refresh_filter_values()
-
         # Tabelle initial befüllen
         self.load_table_data(self.dummy_books)
 
-        # Signale: bei Änderungen sofort filtern
+        # Signale: bei Änderungen sofort aktualisieren (Suche + Sortierung)
         self.search_input.textChanged.connect(self.filter_table)
-        self.filter_combo.currentTextChanged.connect(self.filter_table)
+        self.sort_combo.currentTextChanged.connect(self.filter_table)
 
         # ================= FOOTER =================
         footer_layout = QHBoxLayout()
         footer_layout.addStretch()
 
-        # Wichtig: btn_back wird vom CentralWidget (StackedLayout) verbunden
         self.btn_back = QPushButton("⬅ Zurück zum Hauptmenü")
         self.btn_back.setStyleSheet("""
             QPushButton { background-color: #5CB1D6; color: white; padding: 12px 25px; border: 3px solid #5CB1D6; border-radius: 6px; font-weight: bold; font-size: 13px; }
@@ -395,60 +384,30 @@ class BuchverwaltungWidget(QWidget):
         self.setLayout(main_layout)
 
     # --------------------------------------------------------------------------
-    # Batuhan: Helper
-    # Zweck: Image-Pfad wie im restlichen Projekt
+    # Helper: Image-Pfad
     # --------------------------------------------------------------------------
     def get_image_path(self, filename):
         return os.path.join(os.path.dirname(__file__), "..", "pic", filename)
 
     # --------------------------------------------------------------------------
-    # Batuhan: Filter-Dropdown dynamisch befüllen
-    # Zweck: Dropdown zeigt alle vorhandenen Verlage an
-    # --------------------------------------------------------------------------
-    def _refresh_filter_values(self):
-        publishers = sorted({b[2] for b in self.dummy_books})
-
-        current = self.filter_combo.currentText()
-        self.filter_combo.blockSignals(True)
-        self.filter_combo.clear()
-        self.filter_combo.addItem("Filter: Alle Verlage")
-        for p in publishers:
-            self.filter_combo.addItem(p)
-
-        if current in publishers:
-            self.filter_combo.setCurrentText(current)
-        else:
-            self.filter_combo.setCurrentIndex(0)
-        self.filter_combo.blockSignals(False)
-
-    # --------------------------------------------------------------------------
-    # Batuhan: Tabelle befüllen
-    # - 0..3 sind normale Zellen (ISBN, Titel, Verlag, Auflage)
-    # - 4 ist ein Widget (Bestand: – Zahl +)
-    # - 5 ist ein Widget (Aktionen: ✏️ / 🗑️)
+    # Tabelle befüllen (0..3 normale Items, 4/5 Widgets)
     # --------------------------------------------------------------------------
     def load_table_data(self, data_list):
         self.table.setRowCount(len(data_list))
 
         for row, book in enumerate(data_list):
-            # book: (isbn, titel, verlag, auflage, bestand)
             for col in range(4):
                 item = QTableWidgetItem(str(book[col]))
-                item.setFlags(item.flags() ^ Qt.ItemFlag.ItemIsEditable)  # nicht editierbar
+                item.setFlags(item.flags() ^ Qt.ItemFlag.ItemIsEditable)
                 if col in [0, 3]:
                     item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.table.setItem(row, col, item)
 
-            # Bestand-Widget in Spalte 4
             self._set_stock_widget(row, book[0], int(book[4]))
-
-            # Aktionen-Widget in Spalte 5
             self._set_actions_widget(row, book[0])
 
     # --------------------------------------------------------------------------
-    # Batuhan: Bestand-Widget (– Zahl +)
-    # - Klick auf minus: Bestand -1 (nicht unter 0)
-    # - Klick auf plus: Bestand +1
+    # Bestand-Widget (– Zahl +)
     # --------------------------------------------------------------------------
     def _set_stock_widget(self, row, isbn, stock):
         bg_color = "#F9F9F9" if row % 2 != 0 else "#FFFFFF"
@@ -482,7 +441,6 @@ class BuchverwaltungWidget(QWidget):
             QPushButton:pressed { background: #444444; color: white; }
         """)
 
-        # Signal -> ruft change_stock() auf
         btn_minus.clicked.connect(lambda ch, x=isbn: self.change_stock(x, -1))
         btn_plus.clicked.connect(lambda ch, x=isbn: self.change_stock(x, +1))
 
@@ -493,9 +451,7 @@ class BuchverwaltungWidget(QWidget):
         self.table.setCellWidget(row, 4, stock_widget)
 
     # --------------------------------------------------------------------------
-    # Batuhan: Aktionen-Widget (Bearbeiten/Löschen)
-    # - ✏️ öffnet Bearbeiten-Dialog
-    # - 🗑️ öffnet DeleteConfirmDialog
+    # Aktionen-Widget (Bearbeiten/Löschen)
     # --------------------------------------------------------------------------
     def _set_actions_widget(self, row, isbn):
         bg_color = "#F9F9F9" if row % 2 != 0 else "#FFFFFF"
@@ -530,7 +486,7 @@ class BuchverwaltungWidget(QWidget):
         self.table.setCellWidget(row, 5, action_widget)
 
     # --------------------------------------------------------------------------
-    # Batuhan: "Buch hinzufügen" -> Dialog öffnen -> Daten hinzufügen
+    # Buch hinzufügen
     # --------------------------------------------------------------------------
     def open_book_dialog(self):
         d = BookDialog(self)
@@ -539,7 +495,6 @@ class BuchverwaltungWidget(QWidget):
 
             # ISBN muss eindeutig sein
             if any(b[0] == isbn for b in self.dummy_books):
-                # quick & dirty: doppelte ISBN ignorieren
                 return
 
             self.dummy_books.append((
@@ -549,13 +504,10 @@ class BuchverwaltungWidget(QWidget):
                 d.input_edition.text().strip(),
                 int(d.input_stock.text().strip())
             ))
-
-            # Filter aktualisieren + Tabelle neu laden
-            self._refresh_filter_values()
             self.filter_table()
 
     # --------------------------------------------------------------------------
-    # Batuhan: Bearbeiten -> Dialog öffnen -> Datensatz überschreiben
+    # Buch bearbeiten
     # --------------------------------------------------------------------------
     def edit_book(self, isbn):
         for i, b in enumerate(self.dummy_books):
@@ -569,24 +521,20 @@ class BuchverwaltungWidget(QWidget):
                         d.input_edition.text().strip(),
                         int(d.input_stock.text().strip())
                     )
-                    self._refresh_filter_values()
                     self.filter_table()
                 break
 
     # --------------------------------------------------------------------------
-    # Batuhan: Löschen -> Bestätigungsdialog -> aus Liste entfernen
+    # Buch löschen
     # --------------------------------------------------------------------------
     def delete_book(self, isbn):
         confirm = DeleteConfirmDialog(self)
         if confirm.exec() == QDialog.DialogCode.Accepted:
             self.dummy_books = [b for b in self.dummy_books if b[0] != isbn]
-            self._refresh_filter_values()
             self.filter_table()
 
     # --------------------------------------------------------------------------
-    # Batuhan: Bestand ändern (plus/minus)
-    # - passt Wert im Datensatz an
-    # - läd danach gefilterte Tabelle neu
+    # Bestand ändern (plus/minus)
     # --------------------------------------------------------------------------
     def change_stock(self, isbn, delta):
         for i, b in enumerate(self.dummy_books):
@@ -597,26 +545,33 @@ class BuchverwaltungWidget(QWidget):
         self.filter_table()
 
     # --------------------------------------------------------------------------
-    # Batuhan: Filterlogik
-    # - txt: Suchtext (sucht in ISBN, Titel, Verlag, Auflage)
-    # - f: Verlag-Filter aus Dropdown
-    # - Ergebnis -> load_table_data()
+    # Suche + Sortierung
+    # - Suche: filtert nach ISBN/Titel/Verlag/Auflage
+    # - Sortierung: nach ISBN (Standard) oder Titel/Verlag/Auflage
     # --------------------------------------------------------------------------
     def filter_table(self):
         txt = self.search_input.text().lower().strip()
-        f = self.filter_combo.currentText()
+        sort_opt = self.sort_combo.currentText()
 
+        # 1) Filtern (Suche)
         filtered = []
         for b in self.dummy_books:
-            match_text = (
+            if (
                 txt in b[0].lower()
                 or txt in b[1].lower()
                 or txt in b[2].lower()
                 or txt in b[3].lower()
-            )
-            match_filter = (f == "Filter: Alle Verlage" or f == b[2])
-
-            if match_text and match_filter:
+            ):
                 filtered.append(b)
+
+        # 2) Sortieren (dein gewünschter "Filter")
+        if sort_opt == "Titel":
+            filtered.sort(key=lambda x: x[1].lower())
+        elif sort_opt == "Verlag":
+            filtered.sort(key=lambda x: x[2].lower())
+        elif sort_opt == "Auflage":
+            filtered.sort(key=lambda x: x[3].lower())
+        else:
+            filtered.sort(key=lambda x: x[0].lower())  # Standard: ISBN
 
         self.load_table_data(filtered)
