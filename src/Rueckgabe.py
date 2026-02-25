@@ -1,7 +1,7 @@
 # ------------------------------------------------------------------------------
 # Projekt: BooktrackQR
 # Modul: RückgabeWidget (GUI Design & Validierungs-Logik)
-# Autoren: Jaclyn Barta
+# Autoren: Jaclyn Barta, Rene Bezold
 # ------------------------------------------------------------------------------
 
 import os
@@ -18,7 +18,7 @@ class RueckgabeWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        # Jaclyn: Hintergrund-Setup
+        # Hintergrund-Setup
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet("background-color: #FFFFFF;")
 
@@ -63,10 +63,10 @@ class RueckgabeWidget(QWidget):
 
         main_layout.addSpacing(20)
 
-        # --- DAS GRAUE FELD (Kamera-Bereich kleiner gemacht) ---
+        # --- DAS GRAUE FELD (Kamera-Bereich) ---
         self.kamera_box = QWidget()
         self.kamera_box.setStyleSheet("background-color: #F9F9F9; border: 2px solid #E0E0E0; border-radius: 10px;")
-        self.kamera_box.setFixedHeight(300)  # Höhe von 400 auf 300 reduziert
+        self.kamera_box.setFixedHeight(300)
 
         # Internes Layout für den Text in der Box
         box_layout = QVBoxLayout(self.kamera_box)
@@ -79,12 +79,12 @@ class RueckgabeWidget(QWidget):
         # Die Box zum Hauptlayout hinzufügen
         main_layout.addWidget(self.kamera_box)
 
-        # --- ABSTANDSHALTER (Schiebt den Button nach unten) ---
+        # --- ABSTANDSHALTER  ---
         main_layout.addStretch()
 
         # --- FOOTER (Button außerhalb der Box) ---
         footer_layout = QHBoxLayout()
-        footer_layout.addStretch()  # Schiebt Button nach rechts
+        footer_layout.addStretch()
 
         self.zurueck_btn = QPushButton("⬅ Zurück zum Hauptmenü")
         self.zurueck_btn.setStyleSheet("""
