@@ -1,13 +1,16 @@
 # ------------------------------------------------------------------------------
 # Projekt: BooktrackQR
 # Modul: SchuelerverwaltungWidget (GUI Design & Logik)
-# Autoren: Mustafa Demiral, Ahmet Toplar
-# Stand: Finales Layout mit Dokumentation
+# Sprint 2 Autoren: Mustafa Demiral, Ahmet Toplar
+# Sprint 3 Autoren: Mustafa Demiral, Luis Overrath
+# Stand: Finales Layout mit Dokumentation (Bereinigt um Testdaten)
 # ------------------------------------------------------------------------------
 import os
+import csv  # Luis Overrath: Import für die CSV-Verarbeitung
 from PyQt6.QtWidgets import (QWidget, QPushButton, QVBoxLayout,
                              QLabel, QHBoxLayout, QTableWidget, QTableWidgetItem,
-                             QHeaderView, QLineEdit, QComboBox, QDialog, QFormLayout)
+                             QHeaderView, QLineEdit, QComboBox, QDialog, QFormLayout,
+                             QFileDialog)  # Mustafa Demiral: QFileDialog für die Dateiauswahl hinzugefügt
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QPixmap
 
@@ -189,7 +192,7 @@ class SchuelerverwaltungWidget(QWidget):
         page_title.setStyleSheet("color: #F1BD4D; margin-left: 10px;")
         main_layout.addWidget(page_title)
 
-        # Filter-Leiste: Suche, Klassenfilter und Hinzufügen-Button
+        # Filter-Leiste: Suche und Klassenfilter (Rechtsbündig durch Stretch)
         action_layout = QHBoxLayout()
         action_layout.setContentsMargins(10, 10, 10, 5)
         action_layout.setSpacing(15)
@@ -201,23 +204,14 @@ class SchuelerverwaltungWidget(QWidget):
             "padding: 10px; border: 1px solid #CCCCCC; border-radius: 6px; background-color: #FFFFFF; color: #333333; font-size: 14px;")
         action_layout.addWidget(self.search_input)
 
+        action_layout.addStretch() # Mustafa Demiral: Schiebt den Filter nach rechts
+
         self.filter_combo = QComboBox()
-        self.filter_combo.addItems(["Filter: Alle Klassen", "10A", "10B", "11A", "11B", "FSWI2"])
+        self.filter_combo.addItems(["Klassen", "FSKI 2026", "FSWI 2025", "FSWI 2026", "FSMT 2025", "FSMT 2026", "FSMB 2025", "FSMB 2026"])
         self.filter_combo.setFixedWidth(200)
         self.filter_combo.setStyleSheet(
             "padding: 10px; border: 1px solid #CCCCCC; border-radius: 6px; background-color: #FFFFFF; color: #333333; font-size: 14px;")
         action_layout.addWidget(self.filter_combo)
-
-        action_layout.addStretch()
-
-        btn_add = QPushButton("➕ Schüler hinzufügen")
-        btn_add.setStyleSheet("""
-            QPushButton { background-color: #F1BD4D; color: white; padding: 10px 25px; border: 3px solid #F1BD4D; border-radius: 6px; font-weight: bold; font-size: 14px; }
-            QPushButton:hover { border: 3px solid #333333; }
-            QPushButton:pressed { background-color: #444444; border: 3px solid #444444; }
-        """)
-        btn_add.clicked.connect(self.open_student_dialog)
-        action_layout.addWidget(btn_add)
 
         main_layout.addLayout(action_layout)
 
@@ -252,27 +246,60 @@ class SchuelerverwaltungWidget(QWidget):
 
         main_layout.addWidget(self.table)
 
-        # Ahmet: Initialisierung der Dummy-Daten für die Entwicklung
-        self.dummy_students = [("101", "Müller", "Max", "10A"), ("102", "Schmidt", "Lisa", "10A")]
-        for i in range(103, 130):
-            self.dummy_students.append(
-                (str(i), f"Mustermann{i}", f"Test{i}", "10A" if i % 2 == 0 else "11B"))
+        # --- Initialisierung der Datenliste (Leer zu Beginn) ---
+        self.dummy_students = []
 
         # Daten laden und Signale verknüpfen
         self.load_table_data(self.dummy_students)
         self.search_input.textChanged.connect(self.filter_table)
         self.filter_combo.currentTextChanged.connect(self.filter_table)
 
-        # Footer mit Zurück-Button
+        # --- FOOTER BEREICH ---
         footer_layout = QHBoxLayout()
-        footer_layout.addStretch()
+
+        # Schüler hinzufügen Button (Links)
+        btn_add = QPushButton("➕ Schüler hinzufügen")
+        btn_add.setStyleSheet("""
+            QPushButton { background-color: #F1BD4D; color: white; padding: 10px 25px; 
+            border: 3px solid #F1BD4D; border-radius: 6px; font-weight: bold; font-size: 14px; }
+            QPushButton:hover { border: 3px solid #333333; }
+            QPushButton:pressed { background-color: #444444; border: 3px solid #444444; }
+        """)
+        btn_add.clicked.connect(self.open_student_dialog)
+        footer_layout.addWidget(btn_add)
+
+        footer_layout.addStretch() # Mustafa Demiral: Zentrierungshilfe
+
+        # Mustafa Demiral: CSV-Import Button (Mitte, weißer Hintergrund)
+        btn_import = QPushButton("📥 CSV Import")
+        btn_import.setStyleSheet("""
+            QPushButton { 
+                background-color: #FFFFFF; 
+                color: #333333; 
+                padding: 10px 25px; 
+                border: 3px solid #E0E0E0; 
+                border-radius: 6px; 
+                font-weight: bold; 
+                font-size: 14px; 
+            }
+            QPushButton:hover { border: 3px solid #333333; }
+            QPushButton:pressed { background-color: #F0F0F0; }
+        """)
+        btn_import.clicked.connect(self.import_csv)
+        footer_layout.addWidget(btn_import)
+
+        footer_layout.addStretch() # Mustafa Demiral: Zentrierungshilfe
+
+        # Zurück-Button (Rechts)
         self.btn_back = QPushButton("⬅ Zurück zum Hauptmenü")
         self.btn_back.setStyleSheet("""
-            QPushButton { background-color: #F1BD4D; color: white; padding: 12px 25px; border: 3px solid #F1BD4D; border-radius: 6px; font-weight: bold; font-size: 13px; }
+            QPushButton { background-color: #F1BD4D; color: white; padding: 12px 25px; 
+            border: 3px solid #F1BD4D; border-radius: 6px; font-weight: bold; font-size: 13px; }
             QPushButton:hover { border: 3px solid #333333; }
             QPushButton:pressed { background-color: #444444; border: 3px solid #444444; }
         """)
         footer_layout.addWidget(self.btn_back)
+
         main_layout.addLayout(footer_layout)
         self.setLayout(main_layout)
 
@@ -306,14 +333,19 @@ class SchuelerverwaltungWidget(QWidget):
             btn_edit = QPushButton("✏️")
             btn_edit.setFixedSize(45, 45)
             btn_edit.setStyleSheet(
-                "QPushButton { background: transparent; border: none; font-size: 20px; } QPushButton:hover { background-color: #E0E0E0; border-radius: 8px; }")
+                "QPushButton { background: transparent; border: none; font-size: 20px; } "
+                "QPushButton:hover { background-color: #E0E0E0; border-radius: 8px; }"
+                "QPushButton:pressed { background-color: #FFCDD2; border-radius: 8px; }")
             btn_edit.clicked.connect(lambda ch, sid=student[0]: self.edit_student(sid))
 
             # Löschen Button
             btn_delete = QPushButton("🗑️")
             btn_delete.setFixedSize(45, 45)
             btn_delete.setStyleSheet(
-                "QPushButton { background: transparent; border: none; font-size: 20px; } QPushButton:hover { background-color: #FFCDD2; border-radius: 8px; }")
+                "QPushButton { background: transparent; border: none; font-size: 20px; } "
+                "QPushButton:hover { background-color: #FFCDD2; border-radius: 8px; }"
+                "QPushButton:pressed { background-color: #FFCDD2; border-radius: 8px; }")
+
             btn_delete.clicked.connect(lambda ch, sid=student[0]: self.delete_student(sid))
 
             action_layout.addWidget(btn_edit)
@@ -324,6 +356,7 @@ class SchuelerverwaltungWidget(QWidget):
     def open_student_dialog(self):
         d = StudentDialog(self)
         if d.exec() == QDialog.DialogCode.Accepted:
+            # Falls Liste leer, fange mit ID 101 an
             new_id = str(max([int(s[0]) for s in self.dummy_students]) + 1) if self.dummy_students else "101"
             self.dummy_students.append(
                 (new_id, d.input_nachname.text(), d.input_vorname.text(), d.combo_klasse.currentText()))
@@ -352,5 +385,39 @@ class SchuelerverwaltungWidget(QWidget):
         txt, cls = self.search_input.text().lower(), self.filter_combo.currentText()
         filtered = [s for s in self.dummy_students if
                     (txt in s[0].lower() or txt in s[1].lower() or txt in s[2].lower()) and (
-                            cls == "Filter: Alle Klassen" or cls == s[3])]
+                            cls == "Klassen" or cls == s[3])]
         self.load_table_data(filtered)
+
+    # Mustafa Demiral: Dialog zur Dateiauswahl für den CSV Import
+    def import_csv(self):
+        file_path, _ = QFileDialog.getOpenFileName(self, "CSV Datei auswählen", "", "CSV Dateien (*.csv)")
+        if file_path:
+            # Luis Overrath: Einlesen der CSV-Datei und Aktualisieren der Datenliste
+            try:
+                # Nutze utf-8, häufiges Trennzeichen in DE ist Semikolon
+                with open(file_path, mode='r', encoding='utf-8') as file:
+                    csv_reader = csv.reader(file, delimiter=';')
+
+                    header_skipped = False
+                    for row in csv_reader:
+                        # Überspringe die allererste Zeile (Header)
+                        if not header_skipped:
+                            header_skipped = True
+                            continue
+
+                        # Luis Overrath: Angepasst an die Spalten der Testdaten (ID, Vorname, Nachname, Klasse)
+                        if len(row) >= 4:
+                            student_id = row[0].strip()
+                            vorname = row[1].strip()
+                            nachname = row[2].strip()
+                            klasse = row[3].strip()
+
+                            # Nur hinzufügen, wenn ID noch nicht existiert
+                            existing_ids = [s[0] for s in self.dummy_students]
+                            if student_id not in existing_ids:
+                                self.dummy_students.append((student_id, nachname, vorname, klasse))
+
+                # Aktualisiere die UI-Tabelle
+                self.filter_table()
+            except Exception as e:
+                print(f"Fehler beim Importieren der CSV: {e}")
