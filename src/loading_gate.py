@@ -1,17 +1,3 @@
-# loading_gate.py
-# Modern PyQt6 loading gate that reads ONLY .env and checks DB before opening the app.
-#
-# Requirements:
-#   pip install PyQt6 python-dotenv pymysql
-#
-# Place .env next to Main.py / this file:
-#   DB_HOST=192.168.10.192
-#   DB_PORT=3306
-#   DB_NAME=booksdb
-#   DB_USER=booksuser
-#   DB_PASSWORD=Fswi-2!
-#   DB_CONNECT_TIMEOUT=5
-
 import os
 import pymysql
 from dotenv import load_dotenv
