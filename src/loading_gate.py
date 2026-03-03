@@ -13,7 +13,6 @@ class ConfigError(Exception):
 
 
 def load_db_config(env_path: str) -> dict:
-    """Read DB config ONLY from .env. No defaults. Raise ConfigError if missing/invalid."""
     if not os.path.exists(env_path):
         raise ConfigError(f"Konfigurationsdatei fehlt: {env_path}")
 
@@ -35,13 +34,12 @@ def load_db_config(env_path: str) -> dict:
         "port": port,
         "db": os.environ["DB_NAME"].strip(),
         "user": os.environ["DB_USER"].strip(),
-        "password": os.environ["DB_PASSWORD"],  # don't strip; special chars allowed
+        "password": os.environ["DB_PASSWORD"],  #
         "timeout": timeout,
     }
 
 
 def check_db_connection(cfg: dict) -> tuple[bool, str, str]:
-    """Return (ok, user_message, technical_message)."""
     try:
         conn = pymysql.connect(
             host=cfg["host"],
@@ -84,7 +82,7 @@ def check_db_connection(cfg: dict) -> tuple[bool, str, str]:
 
 
 class DbWorker(QObject):
-    finished = pyqtSignal(bool, str, str)  # ok, user_msg, tech_msg
+    finished = pyqtSignal(bool, str, str)
 
     def __init__(self, cfg: dict):
         super().__init__()
@@ -96,12 +94,6 @@ class DbWorker(QObject):
 
 
 class LoadingGate(QWidget):
-    """
-    Modern loading screen:
-    - reads .env
-    - checks DB in background thread
-    - on success calls on_success()
-    """
 
     def __init__(self, on_success, env_filename: str = ".env"):
         super().__init__()
@@ -110,12 +102,12 @@ class LoadingGate(QWidget):
         base_dir = os.path.dirname(os.path.abspath(__file__))
         self.env_path = os.path.join(base_dir, env_filename)
 
-        # Window styling / behavior
+
         self.setWindowTitle("Bücher App")
         self.setFixedSize(520, 320)
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.MSWindowsFixedSizeDialogHint)
 
-        # --- UI Elements ---
+
         self.title = QLabel("Bücher App")
         self.title.setObjectName("Title")
 
@@ -126,7 +118,7 @@ class LoadingGate(QWidget):
         self.status.setObjectName("Status")
 
         self.progress = QProgressBar()
-        self.progress.setRange(0, 0)  # indeterminate / busy mode
+        self.progress.setRange(0, 0)
         self.progress.setTextVisible(False)
         self.progress.setObjectName("Progress")
 
@@ -163,7 +155,7 @@ class LoadingGate(QWidget):
         root.addWidget(card)
         self.setLayout(root)
 
-        # StyleSheet (modern look)
+
         self.setStyleSheet("""
             QWidget {
                 background: #0b1220;
@@ -222,19 +214,18 @@ class LoadingGate(QWidget):
             }
         """)
 
-        # Background worker thread handles
+
         self.thread: QThread | None = None
         self.worker: DbWorker | None = None
         self.cfg: dict | None = None
 
-        # Dots animation for status
+
         self._dots = 0
         self._base_status_text = "Verbinde zur Datenbank"
         self._dot_timer = QTimer(self)
         self._dot_timer.setInterval(350)
         self._dot_timer.timeout.connect(self._tick_dots)
 
-        # Start flow
         self.start_check()
 
     def _tick_dots(self):
@@ -254,7 +245,7 @@ class LoadingGate(QWidget):
     def start_check(self):
         self.retry_btn.setEnabled(False)
 
-        # Step 1: read .env
+
         self.subtitle.setText("Lese Konfiguration aus .env…")
         self.status.setText("Initialisiere")
         self._set_busy(True)
@@ -269,7 +260,7 @@ class LoadingGate(QWidget):
             self.retry_btn.setEnabled(True)
             return
 
-        # Step 2: connect DB (async)
+
         self.subtitle.setText("Prüfe Datenbankverbindung…")
         self._base_status_text = "Verbinde zur Datenbank"
         self.status.setText(self._base_status_text)
@@ -292,10 +283,9 @@ class LoadingGate(QWidget):
         if ok:
             self.subtitle.setText("Alles bereit")
             self.status.setText("✅ Verbindung erfolgreich")
-            # Small delay for UX, then open app
             QTimer.singleShot(450, self._open_app)
         else:
-            # Log technical error to console (useful for dev)
+
             print("DB TECH ERROR:", tech_msg)
             self.subtitle.setText("Verbindung fehlgeschlagen")
             self.status.setText(f"❌ {user_msg}")
