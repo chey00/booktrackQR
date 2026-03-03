@@ -34,7 +34,7 @@ def load_db_config(env_path: str) -> dict:
         "port": port,
         "db": os.environ["DB_NAME"].strip(),
         "user": os.environ["DB_USER"].strip(),
-        "password": os.environ["DB_PASSWORD"],  #
+        "password": os.environ["DB_PASSWORD"],
         "timeout": timeout,
     }
 
@@ -104,7 +104,7 @@ class LoadingGate(QWidget):
 
 
         self.setWindowTitle("Bücher App")
-        self.setFixedSize(520, 320)
+        self.setFixedSize(920, 720)
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.MSWindowsFixedSizeDialogHint)
 
 
