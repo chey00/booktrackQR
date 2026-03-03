@@ -1,9 +1,18 @@
 import sys
 from PyQt6.QtWidgets import QApplication
 from MainWindow import MainWindow
+from loading_gate import LoadingGate
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
+
     main_window = MainWindow()
-    main_window.show()
+
+    def open_main():
+        main_window.show()
+
+    gate = LoadingGate(on_success=open_main)
+    gate.show()
+
     sys.exit(app.exec())
+
