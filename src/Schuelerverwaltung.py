@@ -799,8 +799,9 @@ class SchuljahrTab(BaseTab):
 # BEREICH 3: DAS HAUPT-WIDGET (Container)
 # ==============================================================================
 
-# Ahmet & Mustafa: Haupt-Widget der Verwaltung
-class VerwaltungTabbedWidget(QWidget):
+# WICHTIG: Die Klasse muss SchuelerverwaltungWidget heißen,
+# damit MainWindow.py sie per Import findet!
+class SchuelerverwaltungWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
@@ -834,6 +835,7 @@ class VerwaltungTabbedWidget(QWidget):
         header_layout.addStretch()
 
         logo_label = QLabel()
+        # Pfad zum Logo ggf. anpassen
         pixmap = QPixmap(os.path.join(os.path.dirname(__file__), "..", "pic", "technikerschule_logo.png"))
         if not pixmap.isNull():
             logo_label.setPixmap(
@@ -843,10 +845,10 @@ class VerwaltungTabbedWidget(QWidget):
 
         main_layout.addSpacing(15)
 
-        # Tab Widget (Navigation auf volle Breite)
+        # Tab Widget
         self.tabs = QTabWidget()
         self.tabs.tabBar().setDocumentMode(True)
-        self.tabs.tabBar().setExpanding(True)  # Füllt die gesamte Breite aus
+        self.tabs.tabBar().setExpanding(True)
         self.tabs.setStyleSheet("""
             QTabWidget::pane { border: 1px solid #CCCCCC; border-radius: 4px; background: white; }
             QTabBar { qproperty-expanding: 1; }
@@ -878,21 +880,22 @@ class VerwaltungTabbedWidget(QWidget):
         self.tabs.addTab(self.tab_klassen, "🏫 Klassen")
         self.tabs.addTab(self.tab_schuljahr, "📅 Schuljahre")
 
-        # Signal für dynamisches Ändern des Breadcrumbs und Titels
         self.tabs.currentChanged.connect(self.update_header_text)
 
         main_layout.addWidget(self.tabs)
 
         # UNSICHTBARER DUMMY-BUTTON für die MainWindow.py Verknüpfung
+        # MainWindow.py erwartet einen Button namens 'btn_back' direkt im Widget
         self.btn_back = QPushButton()
         self.btn_back.hide()
 
+        # Alle internen Zurück-Buttons lösen den Haupt-Zurück-Button aus
         self.tab_schueler.btn_back.clicked.connect(self.btn_back.click)
         self.tab_klassen.btn_back.clicked.connect(self.btn_back.click)
         self.tab_schuljahr.btn_back.clicked.connect(self.btn_back.click)
 
     def update_header_text(self, index):
-        """Ändert das Breadcrumb und den großen Titel je nach Reiter"""
+        """Aktualisiert Breadcrumb und Titel je nach ausgewähltem Tab"""
         if index == 0:
             self.breadcrumb_label.setText("Startseite > Hauptmenü > Schülerverwaltung > Schüler")
             self.page_title.setText("Schülerverwaltung")
