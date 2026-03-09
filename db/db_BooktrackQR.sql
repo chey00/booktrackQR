@@ -66,10 +66,10 @@ CREATE TABLE BuchTitel (
 -- Physische Exemplare (QR-Code identifiziert genau 1 Exemplar)
 -- exemplar_nr = "Buch 1", "Buch 2", ... pro Titel
 CREATE TABLE BuchExemplar (
-  exemplar_id INT PRIMARY KEY,
-  titel_id INT NOT NULL,
-  exemplar_nr INT NOT NULL,
-  qr_code VARCHAR(50) NOT NULL,
+  exemplar_id INT PRIMARY KEY,     # Primary Key
+  titel_id INT NOT NULL,           # FOREINGN KEY   -> ISBN Nr nciht besser als Foreingn Key ?
+  exemplar_nr INT NOT NULL,        # CounterNR
+  qr_code VARCHAR(50) NOT NULL,    # ISBN + CounterNR ( Zahl NICHT QR_Bild  -> ' PAYLOAD' )
   CONSTRAINT chk_exemplar_nr_pos CHECK (exemplar_nr > 0),
   CONSTRAINT fk_exemplar_titel
     FOREIGN KEY (titel_id)

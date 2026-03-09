@@ -1,0 +1,8 @@
+2026-03-05 08:13:00,242 - INFO - QR-CODE ERSTELLT
+Datum: 05/03/2026 08:13:00
+ISBN13: 9783589241323
+Counter: 00010
+Payload: BOOK|9783589241323|00010
+QR-Datei: /Users/studentfs/PycharmProjects/booktrackQR/src/QR/images/QR_BOOK_9783589241323_00010_20260305_081300.png
+Log-Datei: /Users/studentfs/PycharmProjects/booktrackQR/src/QR/logs/QR_BOOK_9783589241323_00010_20260305_081300.log
+SHA256: 9e1e8168c7b91ae0bffe71b97f03ac6b2b71e86d76f827e555d048ebc31dfa1d
