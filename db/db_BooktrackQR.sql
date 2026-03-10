@@ -210,9 +210,33 @@ JOIN Schulklasse sk ON sk.schulklasse_id = s.schulklasse_id
 JOIN Schuljahr sj ON sj.schuljahr_id = sk.schuljahr_id
 LEFT JOIN Ausleihe_Aktuell a ON a.studierende_id = s.studierende_id
 LEFT JOIN BuchExemplar e ON e.exemplar_id = a.exemplar_id
-LEFT JOIN BuchTitel t ON t.isbn = e.isbn;
+LEFT JOIN BuchTitel t ON t.titel_id = e.titel_id;
 
--- =========================================================
+CREATE OR REPLACE VIEW v_bestand_titel AS
+SELECT
+  t.titel_id,
+  t.titel,
+  t.isbn,
+  t.verlag,    -- <--- DIESE ZEILE HAT GEFEHLT!
+  t.auflage,   -- <--- AUFLAGE GLEICH MITNEHMEN!
+  COUNT(e.exemplar_id) AS anzahl_exemplare,
+  SUM(CASE WHEN a.exemplar_id IS NULL THEN 0 ELSE 1 END) AS aktuell_ausgeliehen
+FROM BuchTitel t
+LEFT JOIN BuchExemplar e ON e.titel_id = t.titel_id
+LEFT JOIN Ausleihe_Aktuell a ON a.exemplar_id = e.exemplar_id
+GROUP BY t.titel_id, t.titel, t.isbn, t.verlag, t.auflage;
+
+CREATE VIEW v_schulklasse_uebersicht AS
+SELECT
+  sj.jahr AS schuljahr,
+  sk.name AS schulklasse,
+  COUNT(s.studierende_id) AS anzahl_schueler
+FROM Schulklasse sk
+JOIN Schuljahr sj ON sj.schuljahr_id = sk.schuljahr_id
+LEFT JOIN Studierende s ON s.schulklasse_id = sk.schulklasse_id
+GROUP BY sj.jahr, sk.name;
+
+-- -------------------------
 -- BEWEIS-ABFRAGEN
 -- =========================================================
 
