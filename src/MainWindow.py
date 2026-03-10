@@ -8,6 +8,7 @@
 from PyQt6.QtWidgets import QMainWindow, QStackedWidget, QWidget, QVBoxLayout, QLabel, QPushButton
 from PyQt6.QtCore import QTimer, Qt, pyqtSignal, QObject, QThread
 
+from database_manager import DatabaseManager
 from CentralWidget import CentralWidget
 from Schuelerverwaltung import SchuelerverwaltungWidget
 from Rueckgabe import RueckgabeWidget
@@ -22,6 +23,8 @@ class _HeartbeatWorker(QObject):
     def __init__(self, db_config):
         super().__init__()
         self._db_config = db_config
+        self.db_manager = DatabaseManager()
+        self.error_overlay = None
 
     # René Bezold, Georg Zinn: Worker-Thread für Heartbeat-Check (Verbindungsprüfung)
     def run(self):
@@ -40,8 +43,10 @@ class MainWindow(QMainWindow):
     def __init__(self, db_config, parent=None):  # db_config hinzugefügt René Bezold, Georg Zinn
         super(MainWindow, self).__init__(parent)
 
-        #René Bezold, Georg Zinn
+
+        #René Bezold
         self.db_config = db_config
+        self.db_manager = DatabaseManager()
         self.error_overlay = None
         # -----------------------------------------
 
@@ -55,11 +60,11 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.stacked_widget)
 
         # 2. Deine erstellten Bildschirme laden
-        self.main_menu_widget = CentralWidget()
-        self.schueler_widget = SchuelerverwaltungWidget()
-        self.rueckgabe_widget = RueckgabeWidget()
-        self.bestand_widget = BuchverwaltungWidget()  # Harun Kayaci
-        self.ausleihe_widget = AusleiheWidget()  # Batuhan Aktürk & Daniel Popp
+        self.main_menu_widget = CentralWidget(self)
+        self.schueler_widget = SchuelerverwaltungWidget(self)
+        self.rueckgabe_widget = RueckgabeWidget(self)
+        self.bestand_widget = BuchverwaltungWidget(self)
+        self.ausleihe_widget = AusleiheWidget(self)
 
         # Mustafa
         # 3. Bildschirme zum Stapel hinzufügen
