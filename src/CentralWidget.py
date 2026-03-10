@@ -1,8 +1,8 @@
 # ------------------------------------------------------------------------------
 # Projekt: BooktrackQR
 # Modul: CentralWidget (GUI Design)
-# Autoren: Daniel Popp, Mustafa Demiral
-# Stand: GUI ohne Logik
+# Autoren: Daniel Popp und Mustafa Demiral
+# Stand: GUI mit Original-Farben und korrigierten Variablen
 # ------------------------------------------------------------------------------
 
 import os
@@ -19,6 +19,7 @@ class CentralWidget(QWidget):
         # Daniel: Grundlegendes Setup und Design
         # WICHTIG: Damit der weiße Hintergrund gezeichnet wird!
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet("background-color: white;")
 
         # Hauptlayout (Vertikal)
         main_layout = QVBoxLayout()
@@ -35,7 +36,7 @@ class CentralWidget(QWidget):
         # Mustafa: Header Elemente (Titel & Logo)
         # 2. Titel (Mitte)
         title_label = QLabel("BooktrackQR")
-        title_label.setFont(QFont("Open Sans", 50, QFont.Weight.Bold))  # Open Sans wie das Schullogo
+        title_label.setFont(QFont("Open Sans", 50, QFont.Weight.Bold))
         title_label.setStyleSheet("color: #333333; background-color: transparent; border: none;")
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         header_layout.addWidget(title_label)
@@ -49,8 +50,6 @@ class CentralWidget(QWidget):
         if not pixmap.isNull():
             logo_label.setPixmap(
                 pixmap.scaled(200, 80, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-        else:
-            logo_label.setText("Logo nicht gefunden")
 
         logo_label.setFixedWidth(200)
         logo_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -70,22 +69,22 @@ class CentralWidget(QWidget):
         grid = QGridLayout()
         grid.setSpacing(25)
 
-        # Mustafa: Button Konfiguration
-        # Liste der Buttons: (Text, Bildname, Farbe, Zeile, Spalte)
+        # Mustafa: Button Konfiguration mit DEINEN ORIGINALFARBEN
         buttons_config = [
-            ("AUSLEIHE", "icon_ausleihe.png", "#8DBF42", 0, 0), #https://www.flaticon.com/free-icon-font/book-plus_15399184?k=1770709197884
-            ("RÜCKGABE", "icon_rueckgabe.png", "#E57368", 0, 1), #https://www.flaticon.com/free-icon-font/guide-alt_15399213?page=1&position=96&term=book&origin=search&related_id=15399213
-            ("BUCHVERWALTUNG", "icon_buch.png", "#5CB1D6", 1, 0), #https://www.flaticon.com/free-icon-font/book-circle-arrow-up_9585307?term=book+arrow&related_id=9585307
-            ("SCHÜLERVERWALTUNG", "icon_user.png", "#F1BD4D", 1, 1), #https://www.flaticon.com/free-icon-font/user-gear_9844201
+            ("AUSLEIHE", "icon_ausleihe.png", "#8DBF42", 0, 0, "btn_ausleihe"),
+            ("RÜCKGABE", "icon_rueckgabe.png", "#E57368", 0, 1, "btn_rueckgabe"),
+            ("BUCHVERWALTUNG", "icon_buch.png", "#5CB1D6", 1, 0, "btn_bestand"),
+            ("SCHÜLERVERWALTUNG", "icon_user.png", "#F1BD4D", 1, 1, "btn_schueler"),
         ]
 
         # Daniel: Erstellung der Buttons im Grid
-        for text, img_name, color, row, col in buttons_config:
-            # Vollen Pfad zum Bild holen
+        for text, img_name, color, row, col, attr_name in buttons_config:
             full_img_path = self.get_image_path(img_name)
-
-            # Button erstellen (nur Visualisierung, keine Logik/Connect)
             btn = self.create_centered_button(text, full_img_path, color)
+
+            # Mustafa: Variable speichern für das QStackedWidget im MainWindow
+            # WICHTIG: Zuweisung für MainWindow (AttributeError Fix)
+            setattr(self, attr_name, btn)
 
             grid.addWidget(btn, row, col)
 
@@ -96,11 +95,8 @@ class CentralWidget(QWidget):
     def get_image_path(self, filename):
         """
         Hilfsfunktion: Findet den Pfad zum 'pic' Ordner, egal von wo man startet.
-        Geht davon aus, dass die Ordnerstruktur so ist:
-        /Projekt/src/CentralWidget.py
-        /Projekt/pic/bild.png
         """
-        base_dir = os.path.dirname(__file__)  # Ordner dieser Datei (src)
+        base_dir = os.path.dirname(__file__)
         return os.path.join(base_dir, "..", "pic", filename)
 
     def create_centered_button(self, text, icon_path, color):
@@ -149,5 +145,4 @@ class CentralWidget(QWidget):
                 background-color: #444444;
             }}
         """)
-
         return btn

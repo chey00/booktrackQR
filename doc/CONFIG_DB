@@ -1,0 +1,24 @@
+25.02.26// Denis 
+
+# CONFIG DATEN DATENBANK 
+
+
+# MUSS NOCH als CONFIG-Datei abgeändert werden, damit die sensiblen Daten nicht im Code stehen!
+
+
+# Definiert die Datenbankverbindungs-Konfiguration
+
+
+DB_CONFIG = {
+
+    'host': 'localhost',  # MySQL-Server-Adresse    // 192.168.10.192
+
+    'user': 'dein_user',  # ANPASSUNG: Dein MySQL-Benutzername   // booksuser
+
+    'password': 'dein_passwort',  # ANPASSUNG: Dein MySQL-Passwort // Fswi-2!
+
+    'database': 'library_db'  # ANPASSUNG: Dein Datenbankname // booksdb
+}
+
+
+
