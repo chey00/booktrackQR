@@ -10,7 +10,7 @@ def start_app():
     def open_main():
         nonlocal main_window
         main_window = MainWindow(db_config=gate.cfg)
-        main_window.show()
+        main_window.showFullScreen()
 
     gate = LoadingGate(on_success=open_main)
     gate.show()

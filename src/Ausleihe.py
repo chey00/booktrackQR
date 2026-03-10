@@ -1,31 +1,46 @@
 # ------------------------------------------------------------------------------
 # Projekt: BooktrackQR
-# Modul: AusleiheWidget (GUI Design & Sprint-Demo Scan ohne OpenCV)
+# Modul: AusleiheWidget (GUI Design & Sprint-Demo)
 # Datei: Ausleihe.py
 #
 # Autoren: Batuhan Aktürk & Daniel Popp (Entstanden im Pair Programming)
 #
-# - Daniel Popp: Haupt-GUI Architektur, Layout-Design, Tabellen-Aufbau & Styling,
-#                Basis-Widget-Logik, Darkmode-Fix (show_message).
-# - Batuhan Aktürk: Dialog-Klassen (LoanItemDialog, FakeScanDialog),
-#                   Timer-Logik für Fake-Scan, Eingabe-Validierung, Daten-Management.
+# Aufgabenverteilung / Änderungen in dieser Version:
 #
-# Stand:
-# - Schüler & Buch nur per "Scan" erfassen (Demo-Scan, ohne OpenCV)
-# - UI sieht so aus, als ob Kamera scannt (Eingabefelder sind read-only)
-# - Tabelle zeigt: welcher Schüler welches Buch ausleiht (Kontrolle vor Speichern)
-# - Aktionen: Bearbeiten + Löschen
+# - Daniel Popp:
+#   - Überarbeitung und Erweiterung des GUI-Layouts im Haupt-Widget
+#   - Anpassung der Benutzeroberfläche für manuellen Fallback
+#     (Schüler-ID / ISBN eingeben zusätzlich zum Scan)
+#   - Integration und Gestaltung der Historienanzeige
+#     ("Bereits ausgeliehene Bücher")
+#   - Anpassung der Tabellenstruktur und der Button-Bereiche
+#   - Entfernen der Bearbeiten-Funktion aus der Aktionsspalte
+#   - Pflege des einheitlichen Stylings und Darkmode-Fix für Popups
 #
-# Hinweis für den nächsten Sprint:
-# - Der `FakeScanDialog` kann später nahtlos durch eine echte OpenCV-Kamera
-#   ersetzt werden. Die Dummy-Listen können durch SQLite-Queries ersetzt werden.
+# - Batuhan Aktürk:
+#   - Erweiterung der Logik für Schüler- und Bucherfassung
+#     (Scan + manuelle Eingabe als gemeinsamer Workflow)
+#   - Einführung der zentralen Verarbeitungsfunktionen
+#     `_process_student()` und `_process_book()`
+#   - Einbau der Dummy-Historie und Fehlerfall-Simulation
+#     ("Liste konnte nicht geladen werden")
+#   - Implementierung des Buttons "Nächster Schüler (Reset)"
+#   - Anpassung der Zustandslogik für Freischalten/Sperren der UI-Elemente
+#   - Pflege des FakeScanDialog inkl. Timer-Logik und Demo-Scan-Ablauf
+#
+# Stand (Epic 7):
+# - Schüler & Buch per Scan ODER manueller Eingabe erfassen (Fallback)
+# - Anzeige der "Bereits ausgeliehenen Bücher" nach Schüler-Erfassung
+# - "Nächster Schüler" Button zum sauberen Zurücksetzen des Workflows
+# - Fehlerfall-Simulation eingebaut (Liste konnte nicht geladen werden)
+# - Editieren entfernt (nur noch Löschen möglich, strenger Workflow)
 # ------------------------------------------------------------------------------
 
 import os
 from PyQt6.QtWidgets import (
     QWidget, QPushButton, QVBoxLayout, QLabel, QHBoxLayout,
     QTableWidget, QTableWidgetItem, QHeaderView, QLineEdit,
-    QMessageBox, QDialog, QFormLayout, QComboBox
+    QMessageBox, QDialog, QComboBox
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont, QPixmap
@@ -33,122 +48,12 @@ from PyQt6.QtGui import QFont, QPixmap
 
 # ==============================================================================
 # [Autor: Batuhan Aktürk]
-# Dialog: Ausleihe-Eintrag bearbeiten
-# Zweck: Gibt dem Nutzer die Möglichkeit, eingescannte Daten vor dem
-#        Speichern manuell zu korrigieren (z.B. falls Auflage fehlt).
-# ==============================================================================
-class LoanItemDialog(QDialog):
-    def __init__(self, parent=None, item=None, color="#8DBF42"):
-        super().__init__(parent)
-        self.setWindowTitle("Ausleihe bearbeiten")
-        self.setFixedSize(450, 360)
-
-        # Basis-Styling für den Dialog erzwingen
-        self.setStyleSheet("""
-            QDialog { background-color: #FFFFFF; }
-            QLabel { color: #333333; font-weight: bold; }
-            QLineEdit { background-color: #FFFFFF; border: 1px solid #CCCCCC; border-radius: 4px; padding: 6px; color: #333333; font-size: 14px; }
-            QLineEdit:focus { border: 1px solid #8DBF42; }
-        """)
-        self._color = color
-
-        layout = QVBoxLayout(self)
-        form = QFormLayout()
-        form.setSpacing(14)
-
-        # Eingabefelder definieren
-        self.in_student = QLineEdit()
-        self.in_student.setPlaceholderText("z.B. 101 - Max Mustermann (10A)")
-        self.in_isbn = QLineEdit()
-        self.in_isbn.setPlaceholderText("ISBN")
-        self.in_title = QLineEdit()
-        self.in_title.setPlaceholderText("Titel")
-        self.in_publisher = QLineEdit()
-        self.in_publisher.setPlaceholderText("Verlag")
-        self.in_edition = QLineEdit()
-        self.in_edition.setPlaceholderText("Auflage")
-
-        # Falls ein Item übergeben wurde, Felder vorbefüllen
-        if item:
-            self.in_student.setText(item.get("student_display", ""))
-            self.in_isbn.setText(item.get("isbn", ""))
-            self.in_title.setText(item.get("titel", ""))
-            self.in_publisher.setText(item.get("verlag", ""))
-            self.in_edition.setText(item.get("auflage", ""))
-
-        # Fehler-Label (Versteckt bis Validation fehlschlägt)
-        self.error_label = QLabel("Bitte Pflichtfelder ausfüllen (Schüler, ISBN, Titel).")
-        self.error_label.setStyleSheet("color: #D32F2F; font-size: 12px; font-style: italic; font-weight: normal;")
-        self.error_label.hide()
-
-        form.addRow(QLabel("Schüler*:"), self.in_student)
-        form.addRow(QLabel("ISBN*:"), self.in_isbn)
-        form.addRow(QLabel("Titel*:"), self.in_title)
-        form.addRow(QLabel("Verlag:"), self.in_publisher)
-        form.addRow(QLabel("Auflage:"), self.in_edition)
-
-        layout.addLayout(form)
-        layout.addWidget(self.error_label)
-        layout.addStretch()
-
-        # Buttons
-        btn_row = QHBoxLayout()
-        btn_row.addStretch()
-        self.btn_cancel = QPushButton("Abbrechen")
-        self.btn_save = QPushButton("Speichern")
-
-        self.btn_cancel.setStyleSheet("""
-            QPushButton { background-color: #E0E0E0; color: #333333; padding: 7px 17px; border: 3px solid #E0E0E0; border-radius: 4px; font-weight: bold; }
-            QPushButton:hover { border: 3px solid #333333; }
-            QPushButton:pressed { background-color: #444444; border: 3px solid #444444; color: white; }
-        """)
-        self.btn_save.setStyleSheet(f"""
-            QPushButton {{ background-color: {self._color}; color: white; padding: 7px 17px; border: 3px solid {self._color}; border-radius: 4px; font-weight: bold; }}
-            QPushButton:hover {{ border: 3px solid #333333; }}
-            QPushButton:pressed {{ background-color: #444444; border: 3px solid #444444; }}
-        """)
-
-        self.btn_cancel.clicked.connect(self.reject)
-        self.btn_save.clicked.connect(self._validate)
-
-        btn_row.addWidget(self.btn_cancel)
-        btn_row.addWidget(self.btn_save)
-        layout.addLayout(btn_row)
-
-    def _validate(self):
-        """[Autor: Batuhan Aktürk] Prüft, ob alle Pflichtfelder ausgefüllt sind."""
-        s = self.in_student.text().strip()
-        isbn = self.in_isbn.text().strip()
-        t = self.in_title.text().strip()
-
-        # Reset Styles
-        self.in_student.setStyleSheet("")
-        self.in_isbn.setStyleSheet("")
-        self.in_title.setStyleSheet("")
-
-        ok = True
-        if not s:
-            self.in_student.setStyleSheet("border: 2px solid #D32F2F;")
-            ok = False
-        if not isbn:
-            self.in_isbn.setStyleSheet("border: 2px solid #D32F2F;")
-            ok = False
-        if not t:
-            self.in_title.setStyleSheet("border: 2px solid #D32F2F;")
-            ok = False
-
-        if not ok:
-            self.error_label.show()
-            return
-
-        self.accept()  # Schließt Dialog mit "Erfolg"
-
-
-# ==============================================================================
-# [Autor: Batuhan Aktürk]
 # Demo-Dialog: "Kamera Scan" (Fake)
-# Zweck: Simuliert für die Sprint-Demo den Scanvorgang, damit das Programm
-#        ohne fertige OpenCV-Implementierung getestet und vorgeführt werden kann.
+# Zweck:
+# - Simuliert für die Sprint-Demo den Scanvorgang
+# - Ermöglicht Testbarkeit ohne fertige OpenCV-Implementierung
+# - Wurde in dieser Version weiterverwendet und in den neuen Workflow
+#   (Scan + manuelle Eingabe) eingebunden
 # ==============================================================================
 class FakeScanDialog(QDialog):
     def __init__(self, parent=None, title="QR scannen", label="Auswahl", items=None, color="#8DBF42"):
@@ -170,9 +75,10 @@ class FakeScanDialog(QDialog):
         self.lbl_info.setStyleSheet("color:#333333;")
         layout.addWidget(self.lbl_info)
 
-        # "Video"-Placeholder (Hier kommt später das cv2 Video-Label hin)
+        # Platzhalter für den späteren echten Kamera-Stream
         self.video_placeholder = QLabel(
-            "LIVE-KAMERA (Demo)\n\n[Hier wird im nächsten Sprint\nder OpenCV-Stream angezeigt]")
+            "LIVE-KAMERA (Demo)\n\n[Hier wird im nächsten Sprint\nder OpenCV-Stream angezeigt]"
+        )
         self.video_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.video_placeholder.setMinimumSize(640, 360)
         self.video_placeholder.setStyleSheet(
@@ -184,7 +90,7 @@ class FakeScanDialog(QDialog):
         self.lbl_status.setStyleSheet("color:#666666;")
         layout.addWidget(self.lbl_status)
 
-        # Dropdown Auswahl für deterministische Tests
+        # Dropdown für kontrollierte Demo-Auswahl
         self.combo = QComboBox()
         self.combo.setStyleSheet(
             "padding: 10px; border: 1px solid #CCCCCC; border-radius: 6px; background-color: #FFFFFF; color: #333333; font-size: 14px;"
@@ -216,14 +122,15 @@ class FakeScanDialog(QDialog):
         btn_row.addWidget(self.btn_demo_scan)
         layout.addLayout(btn_row)
 
-        # Fake Scan Animation via Timer
+        # [Autor: Batuhan Aktürk]
+        # Fake-Animation per Timer für realistischeren Demo-Effekt
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
         self._tick_state = 0
         self._timer.start(450)
 
     def _tick(self):
-        """[Autor: Batuhan Aktürk] Ändert den Status-Text für die Illusion eines aktiven Scans."""
+        """[Autor: Batuhan Aktürk] Wechselt die Statusanzeige zyklisch für die Demo."""
         self._tick_state += 1
         if self._tick_state % 3 == 1:
             self.lbl_status.setText("Status: Kamera fokussiert…")
@@ -233,7 +140,7 @@ class FakeScanDialog(QDialog):
             self.lbl_status.setText("Status: Scanne…")
 
     def _show_message(self, title, text):
-        """Lokaler Darkmode-Fix für Popups im Dialog."""
+        """[Autor: Batuhan Aktürk] Lokaler Popup-Fix für gut lesbare Meldungen."""
         msg = QMessageBox(self)
         msg.setWindowTitle(title)
         msg.setText(text)
@@ -246,7 +153,7 @@ class FakeScanDialog(QDialog):
         msg.exec()
 
     def _do_demo_scan(self):
-        """Beendet den Demo-Scan und liefert den Wert zurück."""
+        """[Autor: Batuhan Aktürk] Übernimmt die Demo-Auswahl und beendet den Dialog."""
         picked = self.combo.currentText()
         if picked.startswith("Bitte auswählen"):
             self._show_message("Hinweis", "Bitte im Dropdown einen Demo-QR auswählen.")
@@ -256,10 +163,11 @@ class FakeScanDialog(QDialog):
         self.result_text = picked
         self._timer.stop()
 
-        # Leichte Verzögerung für realistische UX
+        # Kleine Verzögerung für realistischeren Ablauf
         QTimer.singleShot(400, self.accept)
 
     def closeEvent(self, event):
+        """[Autor: Batuhan Aktürk] Stoppt den Timer sauber beim Schließen des Dialogs."""
         try:
             if self._timer.isActive():
                 self._timer.stop()
@@ -269,24 +177,38 @@ class FakeScanDialog(QDialog):
 
 
 # ==============================================================================
-# [Autor: Daniel Popp]
+# [Autor: Daniel Popp & Batuhan Aktürk]
 # Haupt-Widget: AusleiheWidget
-# Zweck: Das Kernmodul für die Ausleihe. Beinhaltet das UI-Layout, die Tabelle
-#        und verknüpft die Scan-Dialoge mit der Geschäftslogik.
+#
+# Daniel Popp:
+# - GUI-Grundaufbau, Layout-Struktur, Styling, Tabellenaufbau,
+#   Historienbereich und Button-Anordnung
+#
+# Batuhan Aktürk:
+# - Workflow-Logik für Schüler- und Buchverarbeitung,
+#   Freischaltung der Eingaben, Reset-Logik und Fehlerfall-Simulation
 # ==============================================================================
 class AusleiheWidget(QWidget):
-    COLOR = "#8DBF42"  # Ausleihe Farbe (wie im Hauptmenü)
+    COLOR = "#8DBF42"
+    ALT_COLOR = "#007BFF"  # derzeit vorbereitet, aber im aktuellen Stand nicht aktiv genutzt
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet("background-color: #FFFFFF;")
 
-        # Zustand des aktuellen Ausleih-Vorgangs
+        # [Autor: Batuhan Aktürk]
+        # Zustand des aktuellen Ausleihvorgangs
         self.current_student = None
         self.loan_items = []
 
-        # Dummy-Daten (Werden in zukünftigen Sprints durch SQLite ersetzt)
+        # ----------------------------------------------------------------------
+        # [Autor: Batuhan Aktürk]
+        # DUMMY DATEN:
+        # - Werden für Demo und Sprint-Präsentation verwendet
+        # - Die Historie simuliert bereits ausgeliehene Bücher
+        # - Für Schüler-ID "201" wird absichtlich ein Fehlerfall simuliert
+        # ----------------------------------------------------------------------
         self.dummy_students = [
             {"id": "101", "name": "Max Müller", "klasse": "10A"},
             {"id": "102", "name": "Lisa Schmidt", "klasse": "10A"},
@@ -298,7 +220,19 @@ class AusleiheWidget(QWidget):
             {"isbn": "9783129999999", "titel": "Englisch 7", "verlag": "Klett", "auflage": "2021"},
         ]
 
-        # ---------------- Layout [Autor: Daniel Popp] ----------------
+        self.dummy_history = {
+            "101": [{"isbn": "9783129999000", "titel": "Physik 10 (Ausgeliehen am 10.10.2025)"}],
+            "102": [],
+            "201": None
+        }
+
+        # ----------------------------------------------------------------------
+        # [Autor: Daniel Popp]
+        # Layout-Erweiterung:
+        # - Manueller Fallback für Schüler- und Bucherfassung ergänzt
+        # - Historienbereich unterhalb der Schülerauswahl eingebaut
+        # - Button-Bereiche und Workflow visuell angepasst
+        # ----------------------------------------------------------------------
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(50, 30, 50, 50)
         main_layout.setSpacing(15)
@@ -329,40 +263,50 @@ class AusleiheWidget(QWidget):
 
         main_layout.addLayout(header_layout)
 
-        # ================= BREADCRUMBS =================
+        # ================= BREADCRUMBS & TITEL =================
         self.back_label = QLabel("Startseite > Hauptmenü > Ausleihe")
         self.back_label.setStyleSheet("color: #666666; font-style: italic; margin-left: 10px;")
         main_layout.addWidget(self.back_label)
 
-        # ================= TITEL =================
         page_title = QLabel("Ausleihe")
         page_title.setFont(QFont("Open Sans", 24, QFont.Weight.Bold))
         page_title.setStyleSheet(f"color: {self.COLOR}; margin-left: 10px;")
         main_layout.addWidget(page_title)
 
-        hint = QLabel("Erfassung nur per QR-Scan (Demo): Schüler scannen → Buch scannen → Tabelle prüfen → speichern.")
+        hint = QLabel("Ablauf: Schüler scannen oder ID eingeben → Buch scannen/eingeben → Tabelle prüfen → speichern.")
         hint.setStyleSheet("color: #333333; margin-left: 10px;")
         main_layout.addWidget(hint)
 
         # ================= SCHÜLER-BEREICH =================
+        # [Autor: Daniel Popp]
+        # GUI-Anpassung:
+        # - Schüler kann jetzt per Scan oder per manueller Eingabe übernommen werden
+        # - Zusätzlicher Button "Übernehmen" als Fallback
         student_area = QHBoxLayout()
         student_area.setContentsMargins(10, 10, 10, 5)
-        student_area.setSpacing(15)
+        student_area.setSpacing(10)
 
         self.in_student = QLineEdit()
-        self.in_student.setPlaceholderText("Schüler-QR wird hier angezeigt (Scan erforderlich)")
-        self.in_student.setFixedWidth(520)
-        self.in_student.setReadOnly(True)  # Verhindert manuelle Eingabe
-        self.in_student.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.in_student.setPlaceholderText("Schüler-ID eingeben oder scannen...")
+        self.in_student.setFixedWidth(400)
         self.in_student.setStyleSheet(
-            "padding: 10px; border: 1px solid #CCCCCC; border-radius: 6px; background-color: #F3F3F3; color: #333333; font-size: 14px;"
+            "padding: 10px; border: 1px solid #CCCCCC; border-radius: 6px; background-color: #FFFFFF; color: #333333; font-size: 14px;"
         )
+        self.in_student.returnPressed.connect(self.manual_student_enter)
         student_area.addWidget(self.in_student)
 
-        self.btn_scan_student = QPushButton("Schüler scannen")
+        self.btn_manual_student = QPushButton("Übernehmen")
+        self.btn_manual_student.setStyleSheet(f"""
+            QPushButton {{ background-color: {self.COLOR}; color: white; padding: 10px 15px; border-radius: 6px; font-weight: bold; font-size: 14px; }}
+            QPushButton:hover {{ background-color: #75A036; }}
+        """)
+        self.btn_manual_student.clicked.connect(self.manual_student_enter)
+        student_area.addWidget(self.btn_manual_student)
+
+        self.btn_scan_student = QPushButton("Schülerausweis scannen")
         self.btn_scan_student.setStyleSheet(f"""
-            QPushButton {{ background-color: {self.COLOR}; color: white; padding: 10px 25px; border: 3px solid {self.COLOR}; border-radius: 6px; font-weight: bold; font-size: 14px; }}
-            QPushButton:hover {{ border: 3px solid #333333; }}
+            QPushButton {{ background-color: {self.COLOR}; color: white; padding: 10px 15px; border-radius: 6px; font-weight: bold; font-size: 14px; }}
+            QPushButton:hover {{ background-color: #75A036; }}
         """)
         self.btn_scan_student.clicked.connect(self.scan_student)
         student_area.addWidget(self.btn_scan_student)
@@ -374,36 +318,81 @@ class AusleiheWidget(QWidget):
         self.lbl_student_status.setStyleSheet("color: #666666; margin-left: 10px;")
         main_layout.addWidget(self.lbl_student_status)
 
+        # ================= HISTORIE =================
+        # [Autor: Daniel Popp]
+        # Neuer UI-Bereich:
+        # - Zeigt nach Schülerauswahl bereits ausgeliehene Bücher an
+        # - Unterstützt einen transparenteren Ausleihprozess
+        # - Bereich bleibt zunächst verborgen und wird erst später eingeblendet
+        self.lbl_history = QLabel("Bereits ausgeliehene Bücher:")
+        self.lbl_history.setStyleSheet("color: #333333; font-weight: bold; margin-left: 10px; margin-top: 10px;")
+        self.lbl_history.hide()
+        main_layout.addWidget(self.lbl_history)
+
+        self.table_history = QTableWidget(0, 2)
+        self.table_history.setHorizontalHeaderLabels(["ISBN", "Titel"])
+        self.table_history.setMaximumHeight(100)
+        self.table_history.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table_history.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.table_history.setStyleSheet("""
+            QTableWidget { background-color: #F8F9FA; border: 1px solid #DEE2E6; border-radius: 6px; color: #333333; }
+            QHeaderView::section { background-color: #E9ECEF; color: #495057; font-weight: bold; border: none; border-bottom: 2px solid #DEE2E6; padding: 6px; }
+        """)
+        self.table_history.verticalHeader().setVisible(False)
+        self.table_history.hide()
+        main_layout.addWidget(self.table_history)
+
+        main_layout.addSpacing(10)
+
         # ================= BUCH-BEREICH =================
+        # [Autor: Daniel Popp]
+        # GUI-Erweiterung:
+        # - ISBN kann jetzt ebenfalls manuell eingegeben werden
+        # - Bereich bleibt gesperrt, bis ein Schüler erfolgreich verarbeitet wurde
         book_area = QHBoxLayout()
-        book_area.setContentsMargins(10, 10, 10, 5)
-        book_area.setSpacing(15)
+        book_area.setContentsMargins(10, 5, 10, 5)
+        book_area.setSpacing(10)
 
         self.in_book = QLineEdit()
-        self.in_book.setPlaceholderText("Buch-QR wird hier angezeigt (Scan erforderlich)")
-        self.in_book.setFixedWidth(520)
-        self.in_book.setReadOnly(True)
-        self.in_book.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.in_book.setPlaceholderText("ISBN eingeben oder scannen...")
+        self.in_book.setFixedWidth(400)
         self.in_book.setStyleSheet(
-            "padding: 10px; border: 1px solid #CCCCCC; border-radius: 6px; background-color: #F3F3F3; color: #333333; font-size: 14px;"
+            "padding: 10px; border: 1px solid #CCCCCC; border-radius: 6px; background-color: #FFFFFF; color: #333333; font-size: 14px;"
         )
+        self.in_book.setEnabled(False)
+        self.in_book.returnPressed.connect(self.manual_book_enter)
         book_area.addWidget(self.in_book)
 
-        self.btn_scan_book = QPushButton("Buch scannen")
-        self.btn_scan_book.setStyleSheet("""
-            QPushButton { background-color: #8DBF42; color: #FFFFFF; padding: 10px 25px; border: 3px solid #8DBF42; border-radius: 6px; font-weight: bold; font-size: 14px; }
-            QPushButton:hover { border: 3px solid #333333; }
+        self.btn_manual_book = QPushButton("Hinzufügen")
+        self.btn_manual_book.setStyleSheet(f"""
+            QPushButton {{ background-color: {self.COLOR}; color: white; padding: 10px 15px; border-radius: 6px; font-weight: bold; font-size: 14px; }}
+            QPushButton:hover {{ background-color: #75A036; }}
+            QPushButton:disabled {{ background-color: #CCCCCC; color: #888888; }}
+        """)
+        self.btn_manual_book.clicked.connect(self.manual_book_enter)
+        self.btn_manual_book.setEnabled(False)
+        book_area.addWidget(self.btn_manual_book)
+
+        self.btn_scan_book = QPushButton("QR-Code scannen")
+        self.btn_scan_book.setStyleSheet(f"""
+            QPushButton {{ background-color: {self.COLOR}; color: white; padding: 10px 15px; border-radius: 6px; font-weight: bold; font-size: 14px; }}
+            QPushButton:hover {{ background-color: #75A036; }}
+            QPushButton:disabled {{ background-color: #CCCCCC; color: #888888; }}
         """)
         self.btn_scan_book.clicked.connect(self.scan_book)
-        self.btn_scan_book.setEnabled(False)  # Erst aktiv, wenn Schüler gewählt wurde
+        self.btn_scan_book.setEnabled(False)
         book_area.addWidget(self.btn_scan_book)
 
         book_area.addStretch()
         main_layout.addLayout(book_area)
 
-        # ================= TABELLE [Autor: Daniel Popp] =================
+        # ================= TABELLE =================
+        # [Autor: Daniel Popp]
+        # Tabellenanpassung:
+        # - Bearbeiten wurde aus der Aktionsspalte entfernt
+        # - Übrig bleibt ein reduzierter, strenger Workflow mit Löschen-Funktion
         self.table = QTableWidget(0, 6)
-        self.table.setHorizontalHeaderLabels(["Schüler", "ISBN", "Titel", "Verlag", "Auflage", "Aktionen"])
+        self.table.setHorizontalHeaderLabels(["Schüler", "ISBN", "Titel", "Verlag", "Auflage", "Aktion"])
         self.table.verticalHeader().setDefaultSectionSize(60)
         self.table.setAlternatingRowColors(True)
         self.table.setShowGrid(True)
@@ -420,23 +409,38 @@ class AusleiheWidget(QWidget):
         self.table.verticalHeader().setVisible(False)
 
         header = self.table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)  # Schüler
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)  # ISBN
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
         self.table.setColumnWidth(1, 170)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)  # Titel
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)  # Verlag
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)  # Auflage
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
         self.table.setColumnWidth(4, 120)
-        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)  # Aktionen
-        self.table.setColumnWidth(5, 160)
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
+        self.table.setColumnWidth(5, 100)
 
         main_layout.addWidget(self.table)
 
         # ================= BUTTONS UNTER TABELLE =================
+        # [Autor: Daniel Popp]
+        # UI-Anpassung:
+        # - "Zurücksetzen" wurde ersetzt durch "Nächster Schüler (Reset)"
+        # - Dadurch ist der Ablauf für den Benutzer klarer strukturiert
         bottom_actions = QHBoxLayout()
-        bottom_actions.setContentsMargins(10, 0, 10, 0)
+        bottom_actions.setContentsMargins(10, 10, 10, 0)
 
-        self.btn_finish = QPushButton("Ausleihe abschließen")
+        bottom_actions.addStretch()
+
+        self.btn_next_student = QPushButton("✖ Nächster Schüler (Reset)")
+        self.btn_next_student.setStyleSheet("""
+            QPushButton { background-color: #E0E0E0; color: #333333; padding: 12px 25px; border: 3px solid #E0E0E0; border-radius: 6px; font-weight: bold; font-size: 13px; }
+            QPushButton:hover { border: 3px solid #333333; }
+        """)
+        self.btn_next_student.clicked.connect(self.reset_all)
+        self.btn_next_student.setEnabled(False)
+        bottom_actions.addWidget(self.btn_next_student)
+
+        self.btn_finish = QPushButton("✔ Ausleihe abschließen")
         self.btn_finish.setStyleSheet(f"""
             QPushButton {{ background-color: {self.COLOR}; color: white; padding: 12px 25px; border: 3px solid {self.COLOR}; border-radius: 6px; font-weight: bold; font-size: 13px; }}
             QPushButton:hover {{ border: 3px solid #333333; }}
@@ -445,24 +449,12 @@ class AusleiheWidget(QWidget):
         self.btn_finish.setEnabled(False)
         bottom_actions.addWidget(self.btn_finish)
 
-        bottom_actions.addStretch()
-
-        self.btn_reset = QPushButton("Zurücksetzen")
-        self.btn_reset.setStyleSheet("""
-            QPushButton { background-color: #E0E0E0; color: #333333; padding: 12px 25px; border: 3px solid #E0E0E0; border-radius: 6px; font-weight: bold; font-size: 13px; }
-            QPushButton:hover { border: 3px solid #333333; }
-        """)
-        self.btn_reset.clicked.connect(self.reset_all)
-        self.btn_reset.setEnabled(False)
-        bottom_actions.addWidget(self.btn_reset)
-
         main_layout.addLayout(bottom_actions)
 
         # ================= FOOTER =================
         footer_layout = QHBoxLayout()
         footer_layout.addStretch()
 
-        # Wichtig: MainWindow verbindet diesen Button -> zurück ins Hauptmenü
         self.btn_back = QPushButton("⬅ Zurück zum Hauptmenü")
         self.btn_back.setStyleSheet(f"""
             QPushButton {{ background-color: {self.COLOR}; color: white; padding: 12px 25px; border: 3px solid {self.COLOR}; border-radius: 6px; font-weight: bold; font-size: 13px; }}
@@ -472,12 +464,19 @@ class AusleiheWidget(QWidget):
 
         main_layout.addLayout(footer_layout)
 
-    # ---------------- Helper ----------------
+    # --------------------------------------------------------------------------
+    # [Autor: Daniel Popp]
+    # Hilfsfunktion: Bildpfad für Logos / Grafiken auflösen
+    # --------------------------------------------------------------------------
     def get_image_path(self, filename):
         return os.path.join(os.path.dirname(__file__), "..", "pic", filename)
 
+    # --------------------------------------------------------------------------
+    # [Autor: Daniel Popp]
+    # Popup-Hilfsfunktion:
+    # - Behebt Darstellungsprobleme bei Darkmode auf verschiedenen Systemen
+    # --------------------------------------------------------------------------
     def show_message(self, title, text):
-        """[Autor: Daniel Popp] Behebt den MacOS/Windows Darkmode-Bug (weiße Schrift auf weißem Grund)."""
         msg = QMessageBox(self)
         msg.setWindowTitle(title)
         msg.setText(text)
@@ -491,66 +490,157 @@ class AusleiheWidget(QWidget):
         msg.exec()
 
     # ==============================================================================
-    # [Autor: Batuhan Aktürk & Daniel Popp]
-    # Logik: Schüler-Scan verarbeiten
+    # [Autor: Batuhan Aktürk]
+    # Logik: Manuelle Schüler-Erfassung
+    # Zweck:
+    # - Fallback, falls kein Scan möglich ist
+    # - Übergibt die eingegebene Schüler-ID an die zentrale Verarbeitungsfunktion
+    # ==============================================================================
+    def manual_student_enter(self):
+        sid = self.in_student.text().strip()
+        if sid:
+            self._process_student(sid)
+
+    # ==============================================================================
+    # [Autor: Batuhan Aktürk]
+    # Logik: Schüler per Demo-Scan erfassen
+    # Zweck:
+    # - Öffnet den FakeScanDialog
+    # - Übergibt die ausgewählte Schüler-ID an die zentrale Verarbeitungsfunktion
     # ==============================================================================
     def scan_student(self):
         items = [f"{s['id']} - {s['name']} ({s['klasse']})" for s in self.dummy_students]
-        d = FakeScanDialog(self, title="Schüler QR scannen (Demo)", label="Schüler auswählen:", items=items,
-                           color=self.COLOR)
+        d = FakeScanDialog(
+            self,
+            title="Schüler QR scannen (Demo)",
+            label="Schüler auswählen:",
+            items=items,
+            color=self.COLOR
+        )
 
-        if d.exec() != QDialog.DialogCode.Accepted or not d.result_text:
-            return
+        if d.exec() == QDialog.DialogCode.Accepted and d.result_text:
+            sid = d.result_text.split(" - ")[0].strip()
+            self._process_student(sid)
 
-        picked = d.result_text
-        self.in_student.setText(picked)
-
-        # Schüler-ID extrahieren und in Dummy-Liste suchen
-        sid = picked.split(" - ")[0].strip()
+    # ==============================================================================
+    # [Autor: Batuhan Aktürk]
+    # Kernlogik: Schüler verarbeiten
+    # Zweck:
+    # - Vereinheitlicht Scan und manuelle Eingabe in einer Funktion
+    # - Setzt den aktuellen Schüler
+    # - Lädt die Historie bereits ausgeliehener Bücher
+    # - Simuliert optional einen Fehlerfall für die Demo
+    # - Schaltet danach den Buchbereich frei
+    # ==============================================================================
+    def _process_student(self, sid):
         s = next((x for x in self.dummy_students if x["id"] == sid), None)
         self.current_student = s if s else {"id": sid, "name": "Unbekannt", "klasse": "—"}
 
         display = f"{self.current_student['id']} - {self.current_student['name']} ({self.current_student['klasse']})"
-        self.lbl_student_status.setText(f"Schüler ausgewählt: {display}")
+        self.lbl_student_status.setText(f"✅ Schüler ausgewählt: {display}")
         self.lbl_student_status.setStyleSheet("color: #333333; margin-left: 10px; font-weight: bold;")
 
-        # UI-Elemente für den nächsten Schritt freischalten
+        # [Autor: Batuhan Aktürk]
+        # Eingabefeld wird vereinheitlicht, egal ob Scan oder manuelle Eingabe
+        self.in_student.setText(display)
+
+        # [Autor: Batuhan Aktürk]
+        # Historie laden und in der Zusatz-Tabelle anzeigen
+        history = self.dummy_history.get(sid, [])
+        if history is None:
+            self.show_message("Fehler", "Liste konnte nicht geladen werden.")
+            self.table_history.setRowCount(0)
+            self.lbl_history.setText(
+                f"Fehler: Historie für {self.current_student['name']} konnte nicht geladen werden."
+            )
+            self.lbl_history.setStyleSheet("color: #D32F2F; font-weight: bold; margin-left: 10px;")
+        else:
+            self.lbl_history.setText(f"Bereits ausgeliehene Bücher von {self.current_student['name']}:")
+            self.lbl_history.setStyleSheet("color: #333333; font-weight: bold; margin-left: 10px;")
+            self.table_history.setRowCount(len(history))
+            for i, item in enumerate(history):
+                self.table_history.setItem(i, 0, QTableWidgetItem(item["isbn"]))
+                self.table_history.setItem(i, 1, QTableWidgetItem(item["titel"]))
+
+        self.lbl_history.show()
+        self.table_history.show()
+
+        # [Autor: Batuhan Aktürk]
+        # Nach erfolgreicher Schülerverarbeitung wird der Buchbereich freigeschaltet
+        self.in_book.setEnabled(True)
+        self.btn_manual_book.setEnabled(True)
         self.btn_scan_book.setEnabled(True)
         self.btn_finish.setEnabled(True)
-        self.btn_reset.setEnabled(True)
+        self.btn_next_student.setEnabled(True)
+
+        # Komfortfunktion: Fokus direkt auf das nächste Eingabefeld
+        self.in_book.setFocus()
 
     # ==============================================================================
-    # [Autor: Batuhan Aktürk & Daniel Popp]
-    # Logik: Buch-Scan verarbeiten
+    # [Autor: Batuhan Aktürk]
+    # Logik: Manuelle Buch-Erfassung
+    # Zweck:
+    # - Fallback für ISBN-Eingabe ohne Scan
+    # - Übergibt die ISBN an die zentrale Buch-Verarbeitung
+    # ==============================================================================
+    def manual_book_enter(self):
+        isbn = self.in_book.text().strip()
+        if isbn:
+            self._process_book(isbn)
+
+    # ==============================================================================
+    # [Autor: Batuhan Aktürk]
+    # Logik: Buch per Demo-Scan erfassen
+    # Zweck:
+    # - Öffnet den FakeScanDialog für Buchdaten
+    # - Übergibt die erkannte ISBN an die zentrale Buch-Verarbeitung
     # ==============================================================================
     def scan_book(self):
         if not self.current_student:
-            self.show_message("Hinweis", "Bitte zuerst einen Schüler scannen.")
+            self.show_message("Hinweis", "Bitte zuerst einen Schüler scannen oder eingeben.")
             return
 
         items = [f"{b['isbn']} - {b['titel']} ({b['verlag']}, {b['auflage']})" for b in self.dummy_books]
-        d = FakeScanDialog(self, title="Buch QR scannen (Demo)", label="Buch auswählen:", items=items, color=self.COLOR)
+        d = FakeScanDialog(
+            self,
+            title="Buch QR scannen (Demo)",
+            label="Buch auswählen:",
+            items=items,
+            color=self.COLOR
+        )
 
-        if d.exec() != QDialog.DialogCode.Accepted or not d.result_text:
+        if d.exec() == QDialog.DialogCode.Accepted and d.result_text:
+            isbn = d.result_text.split(" - ")[0].strip()
+            self._process_book(isbn)
+
+    # ==============================================================================
+    # [Autor: Batuhan Aktürk]
+    # Kernlogik: Buch verarbeiten
+    # Zweck:
+    # - Vereinheitlicht Scan und manuelle Eingabe in einer Funktion
+    # - Prüft auf doppelte Einträge
+    # - Fügt das Buch zur aktuellen Ausleihliste hinzu
+    # - Leert danach das Eingabefeld für den nächsten Vorgang
+    # ==============================================================================
+    def _process_book(self, isbn):
+        if not self.current_student:
+            self.show_message("Hinweis", "Bitte zuerst einen Schüler auswählen.")
             return
 
-        picked = d.result_text
-        self.in_book.setText(picked)
-
-        # ISBN extrahieren und in Dummy-Liste suchen
-        isbn = picked.split(" - ")[0].strip()
         b = next((x for x in self.dummy_books if x["isbn"] == isbn), None)
         if not b:
             b = {"isbn": isbn, "titel": "Unbekanntes Buch", "verlag": "—", "auflage": "—"}
 
         student_display = f"{self.current_student['id']} - {self.current_student['name']} ({self.current_student['klasse']})"
 
-        # Doppelte Scans verhindern (selber Schüler, selbes Buch)
+        # [Autor: Batuhan Aktürk]
+        # Verhindert doppelte Buchauswahl für denselben Schüler
         if any(x["student_id"] == self.current_student["id"] and x["isbn"] == isbn for x in self.loan_items):
             self.show_message("Hinweis", "Dieses Buch ist für diesen Schüler bereits in der Liste.")
+            self.in_book.clear()
+            self.in_book.setFocus()
             return
 
-        # Zur Liste hinzufügen und Tabelle neu laden
         self.loan_items.append({
             "student_id": self.current_student["id"],
             "student_display": student_display,
@@ -561,15 +651,22 @@ class AusleiheWidget(QWidget):
         })
         self.reload_table()
 
+        # Nach erfolgreichem Hinzufügen direkt bereit für das nächste Buch
+        self.in_book.clear()
+        self.in_book.setFocus()
+
     # ==============================================================================
     # [Autor: Daniel Popp]
-    # Logik: Tabelle befüllen und updaten
+    # Logik: Tabelle neu aufbauen
+    # Zweck:
+    # - Lädt alle aktuellen Ausleiheinträge in die Tabelle
+    # - Setzt Zellen auf nicht editierbar
+    # - Verknüpft pro Zeile die Aktionsspalte
     # ==============================================================================
     def reload_table(self):
         self.table.setRowCount(len(self.loan_items))
 
         for row, item in enumerate(self.loan_items):
-            # Zellen befüllen und auf 'ReadOnly' setzen
             it_s = QTableWidgetItem(item["student_display"])
             it_s.setFlags(it_s.flags() ^ Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(row, 0, it_s)
@@ -594,8 +691,15 @@ class AusleiheWidget(QWidget):
 
             self._set_actions_widget(row)
 
+    # ==============================================================================
+    # [Autor: Daniel Popp]
+    # Logik: Aktionsspalte erzeugen
+    # Zweck:
+    # - Erstellt pro Tabellenzeile die Bedienelemente
+    # - In dieser Version bewusst nur noch mit Löschen-Button
+    # - Editieren wurde aus dem Workflow entfernt
+    # ==============================================================================
     def _set_actions_widget(self, row):
-        """Generiert die Buttons für die Spalte 'Aktionen' pro Zeile."""
         bg_color = "#F9F9F9" if row % 2 != 0 else "#FFFFFF"
 
         action_widget = QWidget()
@@ -603,20 +707,8 @@ class AusleiheWidget(QWidget):
 
         action_layout = QHBoxLayout(action_widget)
         action_layout.setContentsMargins(5, 0, 5, 0)
-        action_layout.setSpacing(15)
         action_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # Bearbeiten-Button
-        btn_edit = QPushButton("✏️")
-        btn_edit.setFixedSize(45, 45)
-        btn_edit.setStyleSheet(
-            "QPushButton { background: transparent; border: none; font-size: 20px; }"
-            "QPushButton:hover { background-color: #E0E0E0; border-radius: 8px; }"
-        )
-        # Lambda bindet die aktuelle row, um beim Klick den richtigen Index zu haben
-        btn_edit.clicked.connect(lambda ch, r=row: self.edit_item(r))
-
-        # Löschen-Button
         btn_delete = QPushButton("🗑️")
         btn_delete.setFixedSize(45, 45)
         btn_delete.setStyleSheet(
@@ -625,62 +717,69 @@ class AusleiheWidget(QWidget):
         )
         btn_delete.clicked.connect(lambda ch, r=row: self.remove_item(r))
 
-        action_layout.addWidget(btn_edit)
         action_layout.addWidget(btn_delete)
         self.table.setCellWidget(row, 5, action_widget)
 
     # ==============================================================================
     # [Autor: Batuhan Aktürk]
-    # Logik: Bearbeiten und Löschen von Tabelleneinträgen
+    # Logik: Eintrag aus der aktuellen Ausleihliste entfernen
+    # Zweck:
+    # - Löscht einen ausgewählten Datensatz aus der Liste
+    # - Baut die Tabelle anschließend neu auf
     # ==============================================================================
-    def edit_item(self, row_index):
-        """Öffnet den Bearbeitungs-Dialog für die ausgewählte Tabellenzeile."""
-        if row_index < 0 or row_index >= len(self.loan_items):
-            return
-
-        item = self.loan_items[row_index]
-        d = LoanItemDialog(self, item=item, color=self.COLOR)
-
-        # Wenn Speichern geklickt wurde, Werte übernehmen und Tabelle updaten
-        if d.exec() == QDialog.DialogCode.Accepted:
-            self.loan_items[row_index]["student_display"] = d.in_student.text().strip()
-            self.loan_items[row_index]["isbn"] = d.in_isbn.text().strip()
-            self.loan_items[row_index]["titel"] = d.in_title.text().strip()
-            self.loan_items[row_index]["verlag"] = d.in_publisher.text().strip()
-            self.loan_items[row_index]["auflage"] = d.in_edition.text().strip()
-            self.reload_table()
-
     def remove_item(self, row_index):
-        """Entfernt ein Element aus der Liste und aktualisiert die UI."""
         if row_index < 0 or row_index >= len(self.loan_items):
             return
         self.loan_items.pop(row_index)
         self.reload_table()
 
     # ==============================================================================
-    # [Autor: Daniel Popp & Batuhan Aktürk]
-    # Logik: Abschluss / Reset
+    # [Autor: Batuhan Aktürk & Daniel Popp]
+    # Logik: Workflow vollständig zurücksetzen
+    #
+    # Batuhan Aktürk:
+    # - Zustandslogik zurücksetzen
+    # - Eingaben leeren, Buttons sperren, Fokus neu setzen
+    #
+    # Daniel Popp:
+    # - Historienbereich und Tabellenansicht visuell in den Startzustand zurückführen
     # ==============================================================================
     def reset_all(self):
-        """Setzt die komplette Ausleihe-Ansicht auf den Startzustand zurück."""
         self.current_student = None
         self.loan_items = []
 
         self.in_student.clear()
         self.in_book.clear()
 
-        # Buttons wieder sperren
+        self.table_history.setRowCount(0)
+        self.table_history.hide()
+        self.lbl_history.hide()
+
+        # [Autor: Batuhan Aktürk]
+        # Sperren bis ein neuer Schüler übernommen wird
+        self.in_book.setEnabled(False)
+        self.btn_manual_book.setEnabled(False)
         self.btn_scan_book.setEnabled(False)
         self.btn_finish.setEnabled(False)
-        self.btn_reset.setEnabled(False)
+        self.btn_next_student.setEnabled(False)
 
         self.lbl_student_status.setText("Kein Schüler ausgewählt.")
         self.lbl_student_status.setStyleSheet("color: #666666; margin-left: 10px;")
 
         self.reload_table()
 
+        # Startfokus wieder auf Schüler-Eingabe
+        self.in_student.setFocus()
+
+    # ==============================================================================
+    # [Autor: Batuhan Aktürk]
+    # Logik: Ausleihe abschließen
+    # Zweck:
+    # - Prüft, ob Einträge vorhanden sind
+    # - Simuliert das Speichern der Ausleihe
+    # - Setzt danach den kompletten Workflow zurück
+    # ==============================================================================
     def finish_loan(self):
-        """Validiert die Liste und simuliert das Speichern der Daten in der DB."""
         if not self.loan_items:
             self.show_message("Hinweis", "Keine Ausleihe-Einträge vorhanden.")
             return
