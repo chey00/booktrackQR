@@ -5,6 +5,7 @@ DROP VIEW IF EXISTS v_studierende_ausleihen;
 DROP VIEW IF EXISTS v_bestand_titel;
 DROP VIEW IF EXISTS v_schulklasse_uebersicht;
 
+
 DROP TABLE IF EXISTS Ausleihe_Aktuell;
 DROP TABLE IF EXISTS BuchExemplar;
 DROP TABLE IF EXISTS BuchTitel;
