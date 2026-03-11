@@ -4,6 +4,7 @@
 # Autoren:
 # - Harun: Dialoge (DeleteConfirmDialog, BookDialog) + Validierung
 # - Batuhan: BuchverwaltungWidget (Layout, Tabelle, Sortierung, Bestand +/- , Aktionen)
+# - René + Georg + Denis: Integration Lade-Indikator & Fehlerbehandlung (User Story Resilienz)
 # ------------------------------------------------------------------------------
 
 import os
@@ -12,8 +13,10 @@ from PyQt6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QLineEdit,
     QDialog, QFormLayout, QComboBox
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont, QPixmap
+from loading_widgets import LoadingTableStack # Import von René, Denis & Georg
+from database_manager import DatabaseManager # Import von René, Denis & Georg
 
 
 # ==============================================================================
@@ -226,6 +229,7 @@ class BookDialog(QDialog):
 class BuchverwaltungWidget(QWidget):
     def __init__(self, parent=None):
         super(BuchverwaltungWidget, self).__init__(parent)
+        self.db_manager = DatabaseManager()  # Initialisiert den Datenbank-Motor by René, Georg, Denis
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet("background-color: #FFFFFF;")
 
@@ -345,24 +349,12 @@ class BuchverwaltungWidget(QWidget):
         header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)   # Aktionen
         self.table.setColumnWidth(5, 150)
 
-        main_layout.addWidget(self.table)
-
-        # ================= DUMMY DATEN =================
-        self.dummy_books = [
-            ("9783123456789", "Mathe 5", "Cornelsen", "2023", 150),
-            ("9783120000001", "Deutsch 6", "Klett", "2022", 85),
-        ]
-        for i in range(3, 30):
-            self.dummy_books.append((
-                f"97831200000{i:02d}",
-                f"Testbuch{i}",
-                "Cornelsen" if i % 2 == 0 else "Klett",
-                "2021",
-                10 + i
-            ))
+        #René Bezold, Georg Zinn: Lade-Widget, damit nicht sofort die leere Tabelle angezeigt wird (sondern erst "Daten werden geladen" + Spinner)
+        self.data_stack = LoadingTableStack(self.table, retry_callback=self.filter_table)
+        main_layout.addWidget(self.data_stack)
 
         # Tabelle initial befüllen
-        self.load_table_data(self.dummy_books)
+        self.filter_table()
 
         # Signale: bei Änderungen sofort aktualisieren (Suche + Sortierung)
         self.search_input.textChanged.connect(self.filter_table)
@@ -486,92 +478,108 @@ class BuchverwaltungWidget(QWidget):
         self.table.setCellWidget(row, 5, action_widget)
 
     # --------------------------------------------------------------------------
-    # Buch hinzufügen
+    # Daten werden direkt in die MariaDB geschrieben
     # --------------------------------------------------------------------------
     def open_book_dialog(self):
         d = BookDialog(self)
         if d.exec() == QDialog.DialogCode.Accepted:
-            isbn = d.input_isbn.text().strip()
-
-            # ISBN muss eindeutig sein
-            if any(b[0] == isbn for b in self.dummy_books):
-                return
-
-            self.dummy_books.append((
-                isbn,
-                d.input_title.text().strip(),
-                d.input_publisher.text().strip(),
-                d.input_edition.text().strip(),
-                int(d.input_stock.text().strip())
-            ))
-            self.filter_table()
+            try:
+                # Wir schicken die Daten direkt an den Datenbank-Manager
+                self.db_manager.add_book(
+                    d.input_isbn.text().strip(),
+                    d.input_title.text().strip(),
+                    d.input_publisher.text().strip(),
+                    d.input_edition.text().strip(),
+                    int(d.input_stock.text().strip())
+                )
+                # Tabelle neu laden, um das neue Buch anzuzeigen
+                self.filter_table()
+            except Exception as e:
+                # Falls z.B. die ISBN schon existiert, zeigt das Loading-Widget den Fehler
+                self.data_stack.show_error(f"Fehler beim Hinzufügen: {str(e)}")
 
     # --------------------------------------------------------------------------
-    # Buch bearbeiten
+    # lesen der aktuellen Werte direkt aus der UI-Tabelle
     # --------------------------------------------------------------------------
     def edit_book(self, isbn):
-        for i, b in enumerate(self.dummy_books):
-            if b[0] == isbn:
-                d = BookDialog(self, book_data=b)
+        # Wir suchen die Daten in der UI-Tabelle, da dummy_books gelöscht wurde
+        for row in range(self.table.rowCount()):
+            if self.table.item(row, 0).text() == isbn:
+                # Aktuelle Daten aus den Tabellenzellen auslesen
+                book_data = (
+                    isbn,
+                    self.table.item(row, 1).text(),
+                    self.table.item(row, 2).text(),
+                    self.table.item(row, 3).text(),
+                    int(self.table.cellWidget(row, 4).findChild(QLabel).text())
+                )
+
+                d = BookDialog(self, book_data=book_data)
                 if d.exec() == QDialog.DialogCode.Accepted:
-                    self.dummy_books[i] = (
-                        isbn,
-                        d.input_title.text().strip(),
-                        d.input_publisher.text().strip(),
-                        d.input_edition.text().strip(),
-                        int(d.input_stock.text().strip())
-                    )
-                    self.filter_table()
+                    try:
+                        # Update an die Datenbank senden (Bestand)
+                        self.db_manager.update_stock(isbn, int(d.input_stock.text().strip()))
+                        self.filter_table()
+                    except Exception as e:
+                        self.data_stack.show_error(f"Fehler: {str(e)}")
                 break
 
     # --------------------------------------------------------------------------
-    # Buch löschen
+    # Physisches Löschen aus der MariaDB
     # --------------------------------------------------------------------------
     def delete_book(self, isbn):
         confirm = DeleteConfirmDialog(self)
         if confirm.exec() == QDialog.DialogCode.Accepted:
-            self.dummy_books = [b for b in self.dummy_books if b[0] != isbn]
-            self.filter_table()
+            try:
+                # ÄNDERUNG: Nutzt jetzt den Manager für die echte Datenbank
+                self.db_manager.delete_book(isbn)
+                self.filter_table()
+            except Exception as e:
+                self.data_stack.show_error(f"Löschfehler: {str(e)}")
 
     # --------------------------------------------------------------------------
-    # Bestand ändern (plus/minus)
+    # Bestand ändern (plus/minus) - Überarbeitet für Datenbank-Anbindung
     # --------------------------------------------------------------------------
     def change_stock(self, isbn, delta):
-        for i, b in enumerate(self.dummy_books):
-            if b[0] == isbn:
-                new_stock = max(0, int(b[4]) + delta)
-                self.dummy_books[i] = (b[0], b[1], b[2], b[3], new_stock)
-                break
-        self.filter_table()
+        try:
+            for row in range(self.table.rowCount()):
+                if self.table.item(row, 0).text() == isbn:
+                    stock_widget = self.table.cellWidget(row, 4)
+                    lbl = stock_widget.findChild(QLabel)
+                    current_stock = int(lbl.text())
 
-    # --------------------------------------------------------------------------
-    # Suche + Sortierung
-    # - Suche: filtert nach ISBN/Titel/Verlag/Auflage
-    # - Sortierung: nach ISBN (Standard) oder Titel/Verlag/Auflage
-    # --------------------------------------------------------------------------
+                    new_stock = max(0, current_stock + delta)
+
+                    self.db_manager.update_stock(isbn, new_stock)
+
+                    # Tabelle neu laden, um den aktuellen Stand vom Server zu zeigen
+                    self.filter_table()
+                    break
+        except Exception as e:
+            # Fehlerbehandlung, falls der Raspberry Pi nicht antwortet
+            self.data_stack.show_error(f"Bestand-Update fehlgeschlagen: {str(e)}")
+
+    #René Bezold, Georg Zinn: Filter- und Sortierlogik mit Ladeanimation + Fehlerbehandlung
     def filter_table(self):
-        txt = self.search_input.text().lower().strip()
-        sort_opt = self.sort_combo.currentText()
+        self.data_stack.show_loading()
+        self._execute_filter()
 
-        # 1) Filtern (Suche)
-        filtered = []
-        for b in self.dummy_books:
-            if (
-                txt in b[0].lower()
-                or txt in b[1].lower()
-                or txt in b[2].lower()
-                or txt in b[3].lower()
-            ):
-                filtered.append(b)
+    #René Bezold, Georg Zinn: Filter- und Sortierlogik mit Ladeanimation + Fehlerbehandlung
+    def _execute_filter(self):
+        try:
+            # 1. Suchtext und Sortierung aus der GUI holen
+            txt = self.search_input.text().strip()
+            sort_opt = self.sort_combo.currentText()
 
-        # 2) Sortieren (dein gewünschter "Filter")
-        if sort_opt == "Titel":
-            filtered.sort(key=lambda x: x[1].lower())
-        elif sort_opt == "Verlag":
-            filtered.sort(key=lambda x: x[2].lower())
-        elif sort_opt == "Auflage":
-            filtered.sort(key=lambda x: x[3].lower())
-        else:
-            filtered.sort(key=lambda x: x[0].lower())  # Standard: ISBN
+            # 2. Datenbank-Abfrage starten
+            results = self.db_manager.get_books(txt, sort_opt)
 
-        self.load_table_data(filtered)
+            # 3. Daten in Tabelle laden
+            self.load_table_data(results)
+
+            # 4. Umschalten auf die Tabelle
+            self.data_stack.show_table()
+
+        except Exception as e:
+            # Fehlerfall (z.B. Raspberry Pi offline)
+            self.data_stack.show_error(f"Datenbankfehler: {str(e)}")
