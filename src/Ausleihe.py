@@ -431,7 +431,7 @@ class AusleiheWidget(QWidget):
 
         bottom_actions.addStretch()
 
-        self.btn_next_student = QPushButton("Zurückstzen")
+        self.btn_next_student = QPushButton("Zurücksetzen")
         self.btn_next_student.setStyleSheet("""
             QPushButton { background-color: #E0E0E0; color: #333333; padding: 12px 25px; border: 3px solid #E0E0E0; border-radius: 6px; font-weight: bold; font-size: 13px; }
             QPushButton:hover { border: 3px solid #333333; }
