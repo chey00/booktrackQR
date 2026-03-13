@@ -12,6 +12,17 @@ class ConfigError(Exception):
     pass
 
 
+def resolve_env_path(base_dir: str, env_filename: str) -> str:
+    candidates = [
+        os.path.join(base_dir, env_filename),
+        os.path.join(os.path.dirname(base_dir), env_filename),
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+    return candidates[0]
+
+
 def load_db_config(env_path: str) -> dict:
     if not os.path.exists(env_path):
         raise ConfigError(f"Konfigurationsdatei fehlt: {env_path}")
@@ -100,7 +111,7 @@ class LoadingGate(QWidget):
         self.on_success = on_success
 
         base_dir = os.path.dirname(os.path.abspath(__file__))
-        self.env_path = os.path.join(base_dir, env_filename)
+        self.env_path = resolve_env_path(base_dir, env_filename)
 
         self.setWindowTitle("Bücher App")
         self.setFixedSize(520, 320)
@@ -292,5 +303,5 @@ class LoadingGate(QWidget):
             self.retry_btn.setEnabled(True)
 
     def _open_app(self):
-        self.on_success()
+        self.on_success(self.cfg)
         self.close()

@@ -10,9 +10,11 @@ import csv  # Luis Overrath: Import für die CSV-Verarbeitung
 from PyQt6.QtWidgets import (QWidget, QPushButton, QVBoxLayout,
                              QLabel, QHBoxLayout, QTableWidget, QTableWidgetItem,
                              QHeaderView, QLineEdit, QComboBox, QDialog, QFormLayout,
-                             QFileDialog)  # Mustafa Demiral: QFileDialog für die Dateiauswahl hinzugefügt
+                             QFileDialog, QMessageBox)  # Mustafa Demiral: QFileDialog für die Dateiauswahl hinzugefügt
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QPixmap
+
+from db_access import fetch_all, fetch_one, execute
 
 
 # --- Ahmet: Bestätigungsdialog für das Löschen von Datensätzen ---
@@ -61,10 +63,10 @@ class DeleteConfirmDialog(QDialog):
 
 # --- Mustafa: Eingabemaske für neue Schüler oder zum Bearbeiten ---
 class StudentDialog(QDialog):
-    def __init__(self, parent=None, student_data=None):
+    def __init__(self, parent=None, class_options=None, student_data=None):
         super().__init__(parent)
         self.setWindowTitle("Neuer Schüler" if not student_data else "Schüler bearbeiten")
-        self.setFixedSize(400, 320)
+        self.setFixedSize(420, 380)
         self.setStyleSheet("""
             QDialog { background-color: #FFFFFF; }
             QLabel { color: #333333; font-weight: bold; }
@@ -74,17 +76,27 @@ class StudentDialog(QDialog):
             QLineEdit:focus, QComboBox:focus { border: 1px solid #F1BD4D; }
         """)
 
+        if class_options is None:
+            class_options = []
+
         layout = QVBoxLayout(self)
         form_layout = QFormLayout()
         form_layout.setSpacing(15)
 
         # Eingabefelder
+        self.input_id = QLineEdit()
+        self.input_id.setPlaceholderText("Studierende-ID eingeben")
+
         self.input_vorname = QLineEdit()
         self.input_vorname.setPlaceholderText("Vorname eingeben")
         self.input_nachname = QLineEdit()
         self.input_nachname.setPlaceholderText("Nachname eingeben")
         self.combo_klasse = QComboBox()
-        self.combo_klasse.addItems(["Bitte wählen...", "10A", "10B", "11A", "11B", "FSWI2"])
+        self.combo_klasse.addItem("Bitte wählen...", None)
+        for class_id, class_label in class_options:
+            self.combo_klasse.addItem(class_label, class_id)
+        self.combo_status = QComboBox()
+        self.combo_status.addItems(["AKTIV", "INAKTIV"])
 
         # Fehlermeldung (standardmäßig versteckt)
         self.error_label = QLabel("Bitte alle markierten Pflichtfelder (*) ausfüllen.")
@@ -93,12 +105,22 @@ class StudentDialog(QDialog):
 
         # Ahmet: Bestehende Daten laden, falls Bearbeitungsmodus
         if student_data:
-            self.input_nachname.setText(student_data[1])
-            self.input_vorname.setText(student_data[2])
-            self.combo_klasse.setCurrentText(student_data[3])
+            self.input_id.setText(str(student_data["id"]))
+            self.input_id.setReadOnly(True)
+            self.input_id.setStyleSheet("background:#F3F3F3;")
+            self.input_nachname.setText(student_data["nachname"])
+            self.input_vorname.setText(student_data["vorname"])
+            self.combo_status.setCurrentText(student_data["status"])
+            class_id = student_data["class_id"]
+            for i in range(self.combo_klasse.count()):
+                if self.combo_klasse.itemData(i) == class_id:
+                    self.combo_klasse.setCurrentIndex(i)
+                    break
 
+        form_layout.addRow(QLabel("Studierende-ID*:"), self.input_id)
         form_layout.addRow(QLabel("Vorname*:"), self.input_vorname)
         form_layout.addRow(QLabel("Nachname*:"), self.input_nachname)
+        form_layout.addRow(QLabel("Status*:"), self.combo_status)
         form_layout.addRow(QLabel("Klasse*:"), self.combo_klasse)
 
         layout.addLayout(form_layout)
@@ -132,24 +154,52 @@ class StudentDialog(QDialog):
 
     # Validierung: Prüft ob alle Felder korrekt ausgefüllt sind
     def validate_and_save(self):
-        v, n, k = self.input_vorname.text().strip(), self.input_nachname.text().strip(), self.combo_klasse.currentText()
+        sid = self.input_id.text().strip()
+        v = self.input_vorname.text().strip()
+        n = self.input_nachname.text().strip()
+        status = self.combo_status.currentText().strip()
+        class_id = self.combo_klasse.currentData()
+
+        self.input_id.setStyleSheet("")
         self.input_vorname.setStyleSheet("")
         self.input_nachname.setStyleSheet("")
+        self.combo_status.setStyleSheet("")
         self.combo_klasse.setStyleSheet("")
 
-        if not v or not n or k == "Bitte wählen...":
-            if not v: self.input_vorname.setStyleSheet("border: 2px solid #D32F2F")
-            if not n: self.input_nachname.setStyleSheet("border: 2px solid #D32F2F")
-            if k == "Bitte wählen...": self.combo_klasse.setStyleSheet("border: 2px solid #D32F2F")
+        errors = []
+        if not sid:
+            self.input_id.setStyleSheet("border: 2px solid #D32F2F")
+            errors.append("Studierende-ID ist ein Pflichtfeld.")
+        elif not sid.isdigit():
+            self.input_id.setStyleSheet("border: 2px solid #D32F2F")
+            errors.append("Studierende-ID muss eine Zahl sein.")
+
+        if not v:
+            self.input_vorname.setStyleSheet("border: 2px solid #D32F2F")
+            errors.append("Vorname ist ein Pflichtfeld.")
+        if not n:
+            self.input_nachname.setStyleSheet("border: 2px solid #D32F2F")
+            errors.append("Nachname ist ein Pflichtfeld.")
+        if status not in ("AKTIV", "INAKTIV"):
+            self.combo_status.setStyleSheet("border: 2px solid #D32F2F")
+            errors.append("Status muss AKTIV oder INAKTIV sein.")
+        if class_id is None:
+            self.combo_klasse.setStyleSheet("border: 2px solid #D32F2F")
+            errors.append("Schulklasse ist ein Pflichtfeld.")
+
+        if errors:
+            self.error_label.setText(errors[0])
             self.error_label.show()
-        else:
-            self.accept()
+            return
+
+        self.accept()
 
 
 # --- Mustafa: Haupt-Widget der Schülerverwaltung ---
 class SchuelerverwaltungWidget(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, cfg: dict, parent=None):
         super(SchuelerverwaltungWidget, self).__init__(parent)
+        self.cfg = cfg
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet("background-color: #FFFFFF;")
 
@@ -207,7 +257,7 @@ class SchuelerverwaltungWidget(QWidget):
         action_layout.addStretch() # Mustafa Demiral: Schiebt den Filter nach rechts
 
         self.filter_combo = QComboBox()
-        self.filter_combo.addItems(["Klassen", "FSKI 2026", "FSWI 2025", "FSWI 2026", "FSMT 2025", "FSMT 2026", "FSMB 2025", "FSMB 2026"])
+        self.filter_combo.addItem("Klassen", None)
         self.filter_combo.setFixedWidth(200)
         self.filter_combo.setStyleSheet(
             "padding: 10px; border: 1px solid #CCCCCC; border-radius: 6px; background-color: #FFFFFF; color: #333333; font-size: 14px;")
@@ -216,8 +266,8 @@ class SchuelerverwaltungWidget(QWidget):
         main_layout.addLayout(action_layout)
 
         # Mustafa: Definition der Haupttabelle
-        self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["ID", "Nachname", "Vorname", "Klasse", "Aktionen"])
+        self.table = QTableWidget(0, 6)
+        self.table.setHorizontalHeaderLabels(["ID", "Nachname", "Vorname", "Status", "Klasse", "Aktionen"])
         self.table.verticalHeader().setDefaultSectionSize(60)
         self.table.setAlternatingRowColors(True)
         self.table.setShowGrid(True)
@@ -240,17 +290,18 @@ class SchuelerverwaltungWidget(QWidget):
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
-        self.table.setColumnWidth(3, 120)
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
-        self.table.setColumnWidth(4, 150)
+        self.table.setColumnWidth(3, 110)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
+        self.table.setColumnWidth(5, 150)
 
         main_layout.addWidget(self.table)
 
-        # --- Initialisierung der Datenliste (Leer zu Beginn) ---
-        self.dummy_students = []
-
         # Daten laden und Signale verknüpfen
-        self.load_table_data(self.dummy_students)
+        self.class_options = self.load_classes()
+        self.students = self.load_students()
+        self._populate_class_filter()
+        self.load_table_data(self.students)
         self.search_input.textChanged.connect(self.filter_table)
         self.filter_combo.currentTextChanged.connect(self.filter_table)
 
@@ -307,12 +358,71 @@ class SchuelerverwaltungWidget(QWidget):
     def get_image_path(self, filename):
         return os.path.join(os.path.dirname(__file__), "..", "pic", filename)
 
+    def load_classes(self) -> list[tuple[int, str]]:
+        sql = """
+            SELECT sk.schulklasse_id, sk.name, sj.jahr
+            FROM Schulklasse sk
+            JOIN Schuljahr sj ON sj.schuljahr_id = sk.schuljahr_id
+            ORDER BY sj.jahr, sk.name;
+        """
+        try:
+            rows = fetch_all(self.cfg, sql)
+        except Exception as e:
+            print(f"DB Fehler (load_classes): {e}")
+            QMessageBox.critical(self, "Datenbankfehler", "Schulklassen konnten nicht geladen werden.")
+            return []
+
+        return [(int(r[0]), f"{r[1]} ({r[2]})") for r in rows]
+
+    def load_students(self) -> list[dict]:
+        sql = """
+            SELECT s.studierende_id, s.nachname, s.vorname, s.status,
+                   s.schulklasse_id, sk.name, sj.jahr
+            FROM Studierende s
+            JOIN Schulklasse sk ON sk.schulklasse_id = s.schulklasse_id
+            JOIN Schuljahr sj ON sj.schuljahr_id = sk.schuljahr_id
+            ORDER BY s.studierende_id;
+        """
+        try:
+            rows = fetch_all(self.cfg, sql)
+        except Exception as e:
+            print(f"DB Fehler (load_students): {e}")
+            QMessageBox.critical(self, "Datenbankfehler", "Studierende konnten nicht geladen werden.")
+            return []
+
+        data = []
+        for r in rows:
+            data.append({
+                "id": str(r[0]),
+                "nachname": r[1],
+                "vorname": r[2],
+                "status": r[3],
+                "class_id": int(r[4]),
+                "class_label": f"{r[5]} ({r[6]})",
+            })
+        return data
+
+    def _populate_class_filter(self):
+        self.filter_combo.blockSignals(True)
+        self.filter_combo.clear()
+        self.filter_combo.addItem("Klassen", None)
+        for class_id, class_label in self.class_options:
+            self.filter_combo.addItem(class_label, class_id)
+        self.filter_combo.blockSignals(False)
+
     # Funktion: Befüllt die Tabelle mit den Schülerdaten
     def load_table_data(self, data_list):
         self.table.setRowCount(len(data_list))
         for row, student in enumerate(data_list):
-            for col in range(4):
-                item = QTableWidgetItem(student[col])
+            columns = [
+                student["id"],
+                student["nachname"],
+                student["vorname"],
+                student["status"],
+                student["class_label"],
+            ]
+            for col in range(5):
+                item = QTableWidgetItem(columns[col])
                 item.setFlags(item.flags() ^ Qt.ItemFlag.ItemIsEditable)
                 if col in [0, 3]:
                     item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -336,7 +446,7 @@ class SchuelerverwaltungWidget(QWidget):
                 "QPushButton { background: transparent; border: none; font-size: 20px; } "
                 "QPushButton:hover { background-color: #E0E0E0; border-radius: 8px; }"
                 "QPushButton:pressed { background-color: #FFCDD2; border-radius: 8px; }")
-            btn_edit.clicked.connect(lambda ch, sid=student[0]: self.edit_student(sid))
+            btn_edit.clicked.connect(lambda ch, sid=student["id"]: self.edit_student(sid))
 
             # Löschen Button
             btn_delete = QPushButton("🗑️")
@@ -346,55 +456,115 @@ class SchuelerverwaltungWidget(QWidget):
                 "QPushButton:hover { background-color: #FFCDD2; border-radius: 8px; }"
                 "QPushButton:pressed { background-color: #FFCDD2; border-radius: 8px; }")
 
-            btn_delete.clicked.connect(lambda ch, sid=student[0]: self.delete_student(sid))
+            btn_delete.clicked.connect(lambda ch, sid=student["id"]: self.delete_student(sid))
 
             action_layout.addWidget(btn_edit)
             action_layout.addWidget(btn_delete)
-            self.table.setCellWidget(row, 4, action_widget)
+            self.table.setCellWidget(row, 5, action_widget)
 
     # Mustafa: Öffnet den Dialog zum Hinzufügen eines neuen Schülers
     def open_student_dialog(self):
-        d = StudentDialog(self)
+        d = StudentDialog(self, class_options=self.class_options)
         if d.exec() == QDialog.DialogCode.Accepted:
-            # Falls Liste leer, fange mit ID 101 an
-            new_id = str(max([int(s[0]) for s in self.dummy_students]) + 1) if self.dummy_students else "101"
-            self.dummy_students.append(
-                (new_id, d.input_nachname.text(), d.input_vorname.text(), d.combo_klasse.currentText()))
-            self.filter_table()
+            sid = d.input_id.text().strip()
+            vorname = d.input_vorname.text().strip()
+            nachname = d.input_nachname.text().strip()
+            status = d.combo_status.currentText().strip()
+            class_id = d.combo_klasse.currentData()
+
+            try:
+                exists = fetch_one(self.cfg, "SELECT 1 FROM Studierende WHERE studierende_id = %s;", (sid,))
+                if exists:
+                    QMessageBox.warning(self, "Hinweis", "Studierende-ID existiert bereits.")
+                    return
+
+                execute(
+                    self.cfg,
+                    "INSERT INTO Studierende (studierende_id, vorname, nachname, status, schulklasse_id) VALUES (%s, %s, %s, %s, %s);",
+                    (sid, vorname, nachname, status, class_id),
+                )
+                QMessageBox.information(self, "Erfolg", "Studierende*r wurde angelegt.")
+                self.students = self.load_students()
+                self.filter_table()
+            except Exception as e:
+                print(f"DB Fehler (insert student): {e}")
+                QMessageBox.critical(self, "Datenbankfehler", "Studierende*r konnte nicht angelegt werden.")
 
     # Funktion: Bearbeitet einen bestehenden Schüler-Datensatz
     def edit_student(self, sid):
-        for i, s in enumerate(self.dummy_students):
-            if s[0] == sid:
-                d = StudentDialog(self, student_data=s)
-                if d.exec() == QDialog.DialogCode.Accepted:
-                    self.dummy_students[i] = (sid, d.input_nachname.text(), d.input_vorname.text(),
-                                              d.combo_klasse.currentText())
-                    self.filter_table()
+        target = None
+        for s in self.students:
+            if s["id"] == str(sid):
+                target = s
                 break
+        if not target:
+            QMessageBox.warning(self, "Hinweis", "Studierende*r wurde nicht gefunden.")
+            return
+
+        d = StudentDialog(self, class_options=self.class_options, student_data=target)
+        if d.exec() == QDialog.DialogCode.Accepted:
+            vorname = d.input_vorname.text().strip()
+            nachname = d.input_nachname.text().strip()
+            status = d.combo_status.currentText().strip()
+            class_id = d.combo_klasse.currentData()
+            try:
+                execute(
+                    self.cfg,
+                    "UPDATE Studierende SET vorname = %s, nachname = %s, status = %s, schulklasse_id = %s WHERE studierende_id = %s;",
+                    (vorname, nachname, status, class_id, sid),
+                )
+                QMessageBox.information(self, "Erfolg", "Studierende*r wurde aktualisiert.")
+                self.students = self.load_students()
+                self.filter_table()
+            except Exception as e:
+                print(f"DB Fehler (update student): {e}")
+                QMessageBox.critical(self, "Datenbankfehler", "Studierende*r konnte nicht aktualisiert werden.")
 
     # Funktion: Löscht einen Schüler nach Bestätigung
     def delete_student(self, sid):
         confirm = DeleteConfirmDialog(self)
         if confirm.exec() == QDialog.DialogCode.Accepted:
-            self.dummy_students = [s for s in self.dummy_students if s[0] != sid]
-            self.filter_table()
+            try:
+                in_use = fetch_one(
+                    self.cfg,
+                    "SELECT 1 FROM Ausleihe_Aktuell WHERE studierende_id = %s LIMIT 1;",
+                    (sid,),
+                )
+                if in_use:
+                    QMessageBox.warning(
+                        self,
+                        "Löschen nicht möglich",
+                        "Datensatz kann nicht gelöscht werden, da noch aktive Verknüpfungen bestehen.",
+                    )
+                    return
+
+                execute(self.cfg, "DELETE FROM Studierende WHERE studierende_id = %s;", (sid,))
+                QMessageBox.information(self, "Erfolg", "Studierende*r wurde gelöscht.")
+                self.students = self.load_students()
+                self.filter_table()
+            except Exception as e:
+                print(f"DB Fehler (delete student): {e}")
+                QMessageBox.critical(self, "Datenbankfehler", "Studierende*r konnte nicht gelöscht werden.")
 
     # Ahmet: Such- und Filterlogik für die Tabellenanzeige
     def filter_table(self):
-        txt, cls = self.search_input.text().lower(), self.filter_combo.currentText()
-        filtered = [s for s in self.dummy_students if
-                    (txt in s[0].lower() or txt in s[1].lower() or txt in s[2].lower()) and (
-                            cls == "Klassen" or cls == s[3])]
+        txt = self.search_input.text().lower()
+        class_id = self.filter_combo.currentData()
+        filtered = []
+        for s in self.students:
+            hay = f"{s['id']} {s['nachname']} {s['vorname']} {s['status']} {s['class_label']}".lower()
+            if txt in hay and (class_id is None or s["class_id"] == class_id):
+                filtered.append(s)
         self.load_table_data(filtered)
 
     # Mustafa Demiral: Dialog zur Dateiauswahl für den CSV Import
     def import_csv(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "CSV Datei auswählen", "", "CSV Dateien (*.csv)")
         if file_path:
-            # Luis Overrath: Einlesen der CSV-Datei und Aktualisieren der Datenliste
             try:
-                # Nutze utf-8, häufiges Trennzeichen in DE ist Semikolon
+                class_map = {label: class_id for class_id, label in self.class_options}
+                inserted = 0
+                skipped = 0
                 with open(file_path, mode='r', encoding='utf-8') as file:
                     csv_reader = csv.reader(file, delimiter=';')
 
@@ -405,19 +575,40 @@ class SchuelerverwaltungWidget(QWidget):
                             header_skipped = True
                             continue
 
-                        # Luis Overrath: Angepasst an die Spalten der Testdaten (ID, Vorname, Nachname, Klasse)
                         if len(row) >= 4:
                             student_id = row[0].strip()
                             vorname = row[1].strip()
                             nachname = row[2].strip()
                             klasse = row[3].strip()
+                            class_id = class_map.get(klasse)
 
-                            # Nur hinzufügen, wenn ID noch nicht existiert
-                            existing_ids = [s[0] for s in self.dummy_students]
-                            if student_id not in existing_ids:
-                                self.dummy_students.append((student_id, nachname, vorname, klasse))
+                            if not student_id or not student_id.isdigit() or not vorname or not nachname or class_id is None:
+                                skipped += 1
+                                continue
 
-                # Aktualisiere die UI-Tabelle
+                            exists = fetch_one(
+                                self.cfg,
+                                "SELECT 1 FROM Studierende WHERE studierende_id = %s;",
+                                (student_id,),
+                            )
+                            if exists:
+                                skipped += 1
+                                continue
+
+                            execute(
+                                self.cfg,
+                                "INSERT INTO Studierende (studierende_id, vorname, nachname, status, schulklasse_id) VALUES (%s, %s, %s, %s, %s);",
+                                (student_id, vorname, nachname, "AKTIV", class_id),
+                            )
+                            inserted += 1
+
+                self.students = self.load_students()
                 self.filter_table()
+                QMessageBox.information(
+                    self,
+                    "CSV Import",
+                    f"Import abgeschlossen. Eingefügt: {inserted}, Übersprungen: {skipped}.",
+                )
             except Exception as e:
                 print(f"Fehler beim Importieren der CSV: {e}")
+                QMessageBox.critical(self, "CSV Import", "CSV konnte nicht importiert werden.")

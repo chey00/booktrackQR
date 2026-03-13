@@ -14,7 +14,7 @@ from Buchverwaltung import BuchverwaltungWidget  # Import der Buchverwaltung
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, parent=None):
+    def __init__(self, cfg: dict, parent=None):
         super(MainWindow, self).__init__(parent)
 
         self.setWindowTitle("BooktrackQR")
@@ -28,9 +28,9 @@ class MainWindow(QMainWindow):
 
         # 2. Deine erstellten Bildschirme laden
         self.main_menu_widget = CentralWidget()
-        self.schueler_widget = SchuelerverwaltungWidget()
+        self.schueler_widget = SchuelerverwaltungWidget(cfg)
         self.rueckgabe_widget = RueckgabeWidget()
-        self.bestand_widget = BuchverwaltungWidget()  # Neue Instanz für Bestand
+        self.bestand_widget = BuchverwaltungWidget(cfg)  # Neue Instanz für Bestand
 
         # Mustafa
         # 3. Bildschirme zum Stapel hinzufügen

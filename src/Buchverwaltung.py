@@ -10,10 +10,12 @@ import os
 from PyQt6.QtWidgets import (
     QWidget, QPushButton, QVBoxLayout, QLabel, QHBoxLayout,
     QTableWidget, QTableWidgetItem, QHeaderView, QLineEdit,
-    QDialog, QFormLayout, QComboBox
+    QDialog, QFormLayout, QComboBox, QMessageBox
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QPixmap
+
+from db_access import fetch_all, fetch_one, execute
 
 
 # ==============================================================================
@@ -79,7 +81,7 @@ class BookDialog(QDialog):
         super().__init__(parent)
 
         self.setWindowTitle("Neues Buch" if not book_data else "Buch bearbeiten")
-        self.setFixedSize(420, 340)
+        self.setFixedSize(420, 320)
 
         # Grund-Stylesheet für Dialog + Eingabefelder
         self.setStyleSheet("""
@@ -103,6 +105,9 @@ class BookDialog(QDialog):
         form_layout.setSpacing(15)
 
         # Eingabefelder
+        self.input_id = QLineEdit()
+        self.input_id.setPlaceholderText("Titel-ID eingeben")
+
         self.input_isbn = QLineEdit()
         self.input_isbn.setPlaceholderText("ISBN eingeben")
 
@@ -115,9 +120,6 @@ class BookDialog(QDialog):
         self.input_edition = QLineEdit()
         self.input_edition.setPlaceholderText("Auflage eingeben")
 
-        self.input_stock = QLineEdit()
-        self.input_stock.setPlaceholderText("Bestand (Zahl)")
-
         # Fehlermeldung (standardmäßig versteckt)
         self.error_label = QLabel("Bitte alle markierten Pflichtfelder (*) ausfüllen.")
         self.error_label.setStyleSheet("color: #D32F2F; font-size: 12px; font-style: italic; font-weight: normal;")
@@ -125,21 +127,21 @@ class BookDialog(QDialog):
 
         # Bearbeitungsmodus: bestehende Daten in Felder laden
         if book_data:
-            # book_data: (isbn, titel, verlag, auflage, bestand)
-            self.input_isbn.setText(book_data[0])
-            self.input_isbn.setReadOnly(True)  # ISBN bleibt fix
-            self.input_isbn.setStyleSheet("background:#F3F3F3;")
-            self.input_title.setText(book_data[1])
-            self.input_publisher.setText(book_data[2])
-            self.input_edition.setText(book_data[3])
-            self.input_stock.setText(str(book_data[4]))
+            # book_data: (titel_id, isbn, titel, verlag, auflage)
+            self.input_id.setText(str(book_data[0]))
+            self.input_id.setReadOnly(True)  # Titel-ID bleibt fix
+            self.input_id.setStyleSheet("background:#F3F3F3;")
+            self.input_isbn.setText(book_data[1])
+            self.input_title.setText(book_data[2])
+            self.input_publisher.setText(book_data[3])
+            self.input_edition.setText(str(book_data[4]))
 
         # Pflichtfelder mit * markiert
+        form_layout.addRow(QLabel("Titel-ID*:"), self.input_id)
         form_layout.addRow(QLabel("ISBN*:"), self.input_isbn)
         form_layout.addRow(QLabel("Titel*:"), self.input_title)
         form_layout.addRow(QLabel("Verlag*:"), self.input_publisher)
         form_layout.addRow(QLabel("Auflage*:"), self.input_edition)
-        form_layout.addRow(QLabel("Bestand*:"), self.input_stock)
 
         layout.addLayout(form_layout)
         layout.addWidget(self.error_label)
@@ -174,41 +176,48 @@ class BookDialog(QDialog):
     def validate_and_save(self):
         """
         Validierung:
-        - ISBN, Titel, Verlag, Auflage dürfen nicht leer sein
-        - Bestand muss eine Zahl sein
+        - Titel-ID, ISBN, Titel, Verlag, Auflage dürfen nicht leer sein
+        - Auflage > 0
         - Bei Fehler: rote Rahmen + Fehlermeldung anzeigen
         """
+        tid = self.input_id.text().strip()
         isbn = self.input_isbn.text().strip()
         t = self.input_title.text().strip()
         p = self.input_publisher.text().strip()
         e = self.input_edition.text().strip()
-        s = self.input_stock.text().strip()
 
         # Reset Rahmen (falls vorher Fehler)
+        self.input_id.setStyleSheet("")
         self.input_isbn.setStyleSheet("")
         self.input_title.setStyleSheet("")
         self.input_publisher.setStyleSheet("")
         self.input_edition.setStyleSheet("")
-        self.input_stock.setStyleSheet("")
 
-        ok = True
+        errors = []
+        if not tid:
+            self.input_id.setStyleSheet("border: 2px solid #D32F2F;")
+            errors.append("Titel-ID ist ein Pflichtfeld.")
+        elif not tid.isdigit():
+            self.input_id.setStyleSheet("border: 2px solid #D32F2F;")
+            errors.append("Titel-ID muss eine Zahl sein.")
         if not isbn:
             self.input_isbn.setStyleSheet("border: 2px solid #D32F2F;")
-            ok = False
+            errors.append("ISBN ist ein Pflichtfeld.")
         if not t:
             self.input_title.setStyleSheet("border: 2px solid #D32F2F;")
-            ok = False
+            errors.append("Titel ist ein Pflichtfeld.")
         if not p:
             self.input_publisher.setStyleSheet("border: 2px solid #D32F2F;")
-            ok = False
+            errors.append("Verlag ist ein Pflichtfeld.")
         if not e:
             self.input_edition.setStyleSheet("border: 2px solid #D32F2F;")
-            ok = False
-        if not s or not s.isdigit():
-            self.input_stock.setStyleSheet("border: 2px solid #D32F2F;")
-            ok = False
+            errors.append("Auflage ist ein Pflichtfeld.")
+        elif not e.isdigit() or int(e) <= 0:
+            self.input_edition.setStyleSheet("border: 2px solid #D32F2F;")
+            errors.append("Auflage muss größer als 0 sein.")
 
-        if not ok:
+        if errors:
+            self.error_label.setText(errors[0])
             self.error_label.show()
             return
 
@@ -224,8 +233,9 @@ class BookDialog(QDialog):
 # - Suchlogik + Sortierlogik (Titel/Verlag/Auflage)
 # ==============================================================================
 class BuchverwaltungWidget(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, cfg: dict, parent=None):
         super(BuchverwaltungWidget, self).__init__(parent)
+        self.cfg = cfg
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet("background-color: #FFFFFF;")
 
@@ -290,7 +300,7 @@ class BuchverwaltungWidget(QWidget):
 
         # >>> ÄNDERUNG: statt Verlag-Filter jetzt Sortierungsauswahl <<<
         self.sort_combo = QComboBox()
-        self.sort_combo.addItems(["Sortieren nach: ISBN", "Titel", "Verlag", "Auflage"])
+        self.sort_combo.addItems(["Sortieren nach: Titel-ID", "ISBN", "Titel", "Verlag", "Auflage"])
         self.sort_combo.setFixedWidth(200)
         self.sort_combo.setStyleSheet(
             "padding: 10px; border: 1px solid #CCCCCC; border-radius: 6px; background-color: #FFFFFF; color: #333333; font-size: 14px;"
@@ -311,8 +321,8 @@ class BuchverwaltungWidget(QWidget):
         main_layout.addLayout(action_layout)
 
         # ================= TABLE =================
-        self.table = QTableWidget(0, 6)
-        self.table.setHorizontalHeaderLabels(["ISBN", "Titel", "Verlag", "Auflage", "Bestand", "Aktionen"])
+        self.table = QTableWidget(0, 7)
+        self.table.setHorizontalHeaderLabels(["Titel-ID", "ISBN", "Titel", "Verlag", "Auflage", "Bestand", "Aktionen"])
         self.table.verticalHeader().setDefaultSectionSize(60)
         self.table.setAlternatingRowColors(True)
         self.table.setShowGrid(True)
@@ -330,39 +340,29 @@ class BuchverwaltungWidget(QWidget):
         self.table.verticalHeader().setVisible(False)
 
         header = self.table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)   # ISBN
-        self.table.setColumnWidth(0, 160)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)   # Titel-ID
+        self.table.setColumnWidth(0, 110)
 
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)  # Titel
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)  # Verlag
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)   # ISBN
+        self.table.setColumnWidth(1, 160)
 
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)   # Auflage
-        self.table.setColumnWidth(3, 120)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)  # Titel
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)  # Verlag
 
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)   # Bestand
-        self.table.setColumnWidth(4, 180)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)   # Auflage
+        self.table.setColumnWidth(4, 120)
 
-        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)   # Aktionen
-        self.table.setColumnWidth(5, 150)
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)   # Bestand
+        self.table.setColumnWidth(5, 120)
+
+        header.setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)   # Aktionen
+        self.table.setColumnWidth(6, 150)
 
         main_layout.addWidget(self.table)
 
-        # ================= DUMMY DATEN =================
-        self.dummy_books = [
-            ("9783123456789", "Mathe 5", "Cornelsen", "2023", 150),
-            ("9783120000001", "Deutsch 6", "Klett", "2022", 85),
-        ]
-        for i in range(3, 30):
-            self.dummy_books.append((
-                f"97831200000{i:02d}",
-                f"Testbuch{i}",
-                "Cornelsen" if i % 2 == 0 else "Klett",
-                "2021",
-                10 + i
-            ))
-
         # Tabelle initial befüllen
-        self.load_table_data(self.dummy_books)
+        self.books = self.load_books()
+        self.load_table_data(self.books)
 
         # Signale: bei Änderungen sofort aktualisieren (Suche + Sortierung)
         self.search_input.textChanged.connect(self.filter_table)
@@ -389,6 +389,34 @@ class BuchverwaltungWidget(QWidget):
     def get_image_path(self, filename):
         return os.path.join(os.path.dirname(__file__), "..", "pic", filename)
 
+    def load_books(self) -> list[dict]:
+        sql = """
+            SELECT t.titel_id, t.isbn, t.titel, t.verlag, t.auflage,
+                   COUNT(e.exemplar_id) AS bestand
+            FROM BuchTitel t
+            LEFT JOIN BuchExemplar e ON e.isbn = t.isbn
+            GROUP BY t.titel_id, t.isbn, t.titel, t.verlag, t.auflage
+            ORDER BY t.titel_id;
+        """
+        try:
+            rows = fetch_all(self.cfg, sql)
+        except Exception as e:
+            print(f"DB Fehler (load_books): {e}")
+            QMessageBox.critical(self, "Datenbankfehler", "Buchtitel konnten nicht geladen werden.")
+            return []
+
+        data = []
+        for r in rows:
+            data.append({
+                "id": str(r[0]),
+                "isbn": r[1],
+                "titel": r[2],
+                "verlag": r[3],
+                "auflage": r[4],
+                "bestand": int(r[5]),
+            })
+        return data
+
     # --------------------------------------------------------------------------
     # Tabelle befüllen (0..3 normale Items, 4/5 Widgets)
     # --------------------------------------------------------------------------
@@ -396,64 +424,27 @@ class BuchverwaltungWidget(QWidget):
         self.table.setRowCount(len(data_list))
 
         for row, book in enumerate(data_list):
-            for col in range(4):
-                item = QTableWidgetItem(str(book[col]))
+            columns = [
+                book["id"],
+                book["isbn"],
+                book["titel"],
+                book["verlag"],
+                book["auflage"],
+                book["bestand"],
+            ]
+            for col in range(6):
+                item = QTableWidgetItem(str(columns[col]))
                 item.setFlags(item.flags() ^ Qt.ItemFlag.ItemIsEditable)
-                if col in [0, 3]:
+                if col in [0, 1, 4, 5]:
                     item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.table.setItem(row, col, item)
 
-            self._set_stock_widget(row, book[0], int(book[4]))
-            self._set_actions_widget(row, book[0])
-
-    # --------------------------------------------------------------------------
-    # Bestand-Widget (– Zahl +)
-    # --------------------------------------------------------------------------
-    def _set_stock_widget(self, row, isbn, stock):
-        bg_color = "#F9F9F9" if row % 2 != 0 else "#FFFFFF"
-
-        stock_widget = QWidget()
-        stock_widget.setStyleSheet(f"background-color: {bg_color};")
-
-        layout = QHBoxLayout(stock_widget)
-        layout.setContentsMargins(5, 0, 5, 0)
-        layout.setSpacing(10)
-        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        btn_minus = QPushButton("–")
-        btn_minus.setFixedSize(35, 35)
-        btn_minus.setStyleSheet("""
-            QPushButton { background: #E0E0E0; border: none; font-size: 18px; font-weight: bold; border-radius: 6px; }
-            QPushButton:hover { border: 2px solid #333333; }
-            QPushButton:pressed { background: #444444; color: white; }
-        """)
-
-        lbl_stock = QLabel(str(stock))
-        lbl_stock.setFixedWidth(50)
-        lbl_stock.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl_stock.setStyleSheet("font-size: 15px; font-weight: bold; color: #333333; background: transparent;")
-
-        btn_plus = QPushButton("+")
-        btn_plus.setFixedSize(35, 35)
-        btn_plus.setStyleSheet("""
-            QPushButton { background: #E0E0E0; border: none; font-size: 18px; font-weight: bold; border-radius: 6px; }
-            QPushButton:hover { border: 2px solid #333333; }
-            QPushButton:pressed { background: #444444; color: white; }
-        """)
-
-        btn_minus.clicked.connect(lambda ch, x=isbn: self.change_stock(x, -1))
-        btn_plus.clicked.connect(lambda ch, x=isbn: self.change_stock(x, +1))
-
-        layout.addWidget(btn_minus)
-        layout.addWidget(lbl_stock)
-        layout.addWidget(btn_plus)
-
-        self.table.setCellWidget(row, 4, stock_widget)
+            self._set_actions_widget(row, book["id"])
 
     # --------------------------------------------------------------------------
     # Aktionen-Widget (Bearbeiten/Löschen)
     # --------------------------------------------------------------------------
-    def _set_actions_widget(self, row, isbn):
+    def _set_actions_widget(self, row, titel_id):
         bg_color = "#F9F9F9" if row % 2 != 0 else "#FFFFFF"
 
         action_widget = QWidget()
@@ -470,7 +461,7 @@ class BuchverwaltungWidget(QWidget):
             "QPushButton { background: transparent; border: none; font-size: 20px; }"
             "QPushButton:hover { background-color: #E0E0E0; border-radius: 8px; }"
         )
-        btn_edit.clicked.connect(lambda ch, x=isbn: self.edit_book(x))
+        btn_edit.clicked.connect(lambda ch, x=titel_id: self.edit_book(x))
 
         btn_delete = QPushButton("🗑️")
         btn_delete.setFixedSize(45, 45)
@@ -478,12 +469,12 @@ class BuchverwaltungWidget(QWidget):
             "QPushButton { background: transparent; border: none; font-size: 20px; }"
             "QPushButton:hover { background-color: #FFCDD2; border-radius: 8px; }"
         )
-        btn_delete.clicked.connect(lambda ch, x=isbn: self.delete_book(x))
+        btn_delete.clicked.connect(lambda ch, x=titel_id: self.delete_book(x))
 
         action_layout.addWidget(btn_edit)
         action_layout.addWidget(btn_delete)
 
-        self.table.setCellWidget(row, 5, action_widget)
+        self.table.setCellWidget(row, 6, action_widget)
 
     # --------------------------------------------------------------------------
     # Buch hinzufügen
@@ -491,58 +482,97 @@ class BuchverwaltungWidget(QWidget):
     def open_book_dialog(self):
         d = BookDialog(self)
         if d.exec() == QDialog.DialogCode.Accepted:
+            titel_id = d.input_id.text().strip()
             isbn = d.input_isbn.text().strip()
+            titel = d.input_title.text().strip()
+            verlag = d.input_publisher.text().strip()
+            auflage = int(d.input_edition.text().strip())
 
-            # ISBN muss eindeutig sein
-            if any(b[0] == isbn for b in self.dummy_books):
-                return
+            try:
+                exists = fetch_one(self.cfg, "SELECT 1 FROM BuchTitel WHERE titel_id = %s;", (titel_id,))
+                if exists:
+                    QMessageBox.warning(self, "Hinweis", "Titel-ID existiert bereits.")
+                    return
 
-            self.dummy_books.append((
-                isbn,
-                d.input_title.text().strip(),
-                d.input_publisher.text().strip(),
-                d.input_edition.text().strip(),
-                int(d.input_stock.text().strip())
-            ))
-            self.filter_table()
+                execute(
+                    self.cfg,
+                    "INSERT INTO BuchTitel (titel_id, titel, verlag, auflage, isbn) VALUES (%s, %s, %s, %s, %s);",
+                    (titel_id, titel, verlag, auflage, isbn),
+                )
+                QMessageBox.information(self, "Erfolg", "Buchtitel wurde angelegt.")
+                self.books = self.load_books()
+                self.filter_table()
+            except Exception as e:
+                print(f"DB Fehler (insert book): {e}")
+                QMessageBox.critical(self, "Datenbankfehler", "Buchtitel konnte nicht angelegt werden.")
 
     # --------------------------------------------------------------------------
     # Buch bearbeiten
     # --------------------------------------------------------------------------
-    def edit_book(self, isbn):
-        for i, b in enumerate(self.dummy_books):
-            if b[0] == isbn:
-                d = BookDialog(self, book_data=b)
-                if d.exec() == QDialog.DialogCode.Accepted:
-                    self.dummy_books[i] = (
-                        isbn,
-                        d.input_title.text().strip(),
-                        d.input_publisher.text().strip(),
-                        d.input_edition.text().strip(),
-                        int(d.input_stock.text().strip())
-                    )
-                    self.filter_table()
+    def edit_book(self, titel_id):
+        target = None
+        for b in self.books:
+            if b["id"] == str(titel_id):
+                target = b
                 break
+        if not target:
+            QMessageBox.warning(self, "Hinweis", "Buchtitel wurde nicht gefunden.")
+            return
+
+        d = BookDialog(self, book_data=(target["id"], target["isbn"], target["titel"], target["verlag"], target["auflage"]))
+        if d.exec() == QDialog.DialogCode.Accepted:
+            titel = d.input_title.text().strip()
+            verlag = d.input_publisher.text().strip()
+            auflage = int(d.input_edition.text().strip())
+            isbn_val = d.input_isbn.text().strip()
+            try:
+                execute(
+                    self.cfg,
+                    "UPDATE BuchTitel SET titel = %s, verlag = %s, auflage = %s, isbn = %s WHERE titel_id = %s;",
+                    (titel, verlag, auflage, isbn_val, titel_id),
+                )
+                QMessageBox.information(self, "Erfolg", "Buchtitel wurde aktualisiert.")
+                self.books = self.load_books()
+                self.filter_table()
+            except Exception as e:
+                print(f"DB Fehler (update book): {e}")
+                QMessageBox.critical(self, "Datenbankfehler", "Buchtitel konnte nicht aktualisiert werden.")
 
     # --------------------------------------------------------------------------
     # Buch löschen
     # --------------------------------------------------------------------------
-    def delete_book(self, isbn):
+    def delete_book(self, titel_id):
         confirm = DeleteConfirmDialog(self)
         if confirm.exec() == QDialog.DialogCode.Accepted:
-            self.dummy_books = [b for b in self.dummy_books if b[0] != isbn]
-            self.filter_table()
+            try:
+                isbn_row = fetch_one(
+                    self.cfg,
+                    "SELECT isbn FROM BuchTitel WHERE titel_id = %s;",
+                    (titel_id,),
+                )
+                isbn_val = isbn_row[0] if isbn_row else None
+                in_use = None
+                if isbn_val:
+                    in_use = fetch_one(
+                        self.cfg,
+                        "SELECT 1 FROM BuchExemplar WHERE isbn = %s LIMIT 1;",
+                        (isbn_val,),
+                    )
+                if in_use:
+                    QMessageBox.warning(
+                        self,
+                        "Löschen nicht möglich",
+                        "Datensatz kann nicht gelöscht werden, da noch aktive Verknüpfungen bestehen.",
+                    )
+                    return
 
-    # --------------------------------------------------------------------------
-    # Bestand ändern (plus/minus)
-    # --------------------------------------------------------------------------
-    def change_stock(self, isbn, delta):
-        for i, b in enumerate(self.dummy_books):
-            if b[0] == isbn:
-                new_stock = max(0, int(b[4]) + delta)
-                self.dummy_books[i] = (b[0], b[1], b[2], b[3], new_stock)
-                break
-        self.filter_table()
+                execute(self.cfg, "DELETE FROM BuchTitel WHERE titel_id = %s;", (titel_id,))
+                QMessageBox.information(self, "Erfolg", "Buchtitel wurde gelöscht.")
+                self.books = self.load_books()
+                self.filter_table()
+            except Exception as e:
+                print(f"DB Fehler (delete book): {e}")
+                QMessageBox.critical(self, "Datenbankfehler", "Buchtitel konnte nicht gelöscht werden.")
 
     # --------------------------------------------------------------------------
     # Suche + Sortierung
@@ -555,23 +585,21 @@ class BuchverwaltungWidget(QWidget):
 
         # 1) Filtern (Suche)
         filtered = []
-        for b in self.dummy_books:
-            if (
-                txt in b[0].lower()
-                or txt in b[1].lower()
-                or txt in b[2].lower()
-                or txt in b[3].lower()
-            ):
+        for b in self.books:
+            hay = f"{b['id']} {b['isbn']} {b['titel']} {b['verlag']} {b['auflage']} {b['bestand']}".lower()
+            if txt in hay:
                 filtered.append(b)
 
         # 2) Sortieren (dein gewünschter "Filter")
-        if sort_opt == "Titel":
-            filtered.sort(key=lambda x: x[1].lower())
+        if sort_opt == "ISBN":
+            filtered.sort(key=lambda x: x["isbn"].lower())
+        elif sort_opt == "Titel":
+            filtered.sort(key=lambda x: x["titel"].lower())
         elif sort_opt == "Verlag":
-            filtered.sort(key=lambda x: x[2].lower())
+            filtered.sort(key=lambda x: x["verlag"].lower())
         elif sort_opt == "Auflage":
-            filtered.sort(key=lambda x: x[3].lower())
+            filtered.sort(key=lambda x: x["auflage"])
         else:
-            filtered.sort(key=lambda x: x[0].lower())  # Standard: ISBN
+            filtered.sort(key=lambda x: int(x["id"]))  # Standard: Titel-ID
 
         self.load_table_data(filtered)
