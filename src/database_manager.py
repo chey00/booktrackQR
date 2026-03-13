@@ -126,11 +126,7 @@ class DatabaseManager:
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
-                cursor.execute("SELECT titel_id FROM BuchTitel WHERE isbn = %s", (isbn,))
-                res = cursor.fetchone()
-                if not res: return
-                t_id = res[0]
-                cursor.execute("SELECT COUNT(*) FROM BuchExemplar WHERE titel_id = %s", (t_id,))
+                cursor.execute("SELECT COUNT(*) FROM BuchExemplar WHERE isbn = %s", (isbn,))
                 current_count = cursor.fetchone()[0]
                 target = int(delta_or_new)
 
@@ -140,20 +136,19 @@ class DatabaseManager:
                         e_id = cursor.fetchone()[0]
                         qr = f"QR-{isbn}-{i}"
                         cursor.execute(
-                            "INSERT INTO BuchExemplar (exemplar_id, titel_id, exemplar_nr, qr_code) VALUES (%s, %s, %s, %s)",
-                            (e_id, t_id, i, qr))
+                            "INSERT INTO BuchExemplar (exemplar_id, isbn, exemplar_nr, qr_code) VALUES (%s, %s, %s, %s)",
+                            (e_id, isbn, i, qr))
+
                 elif target < current_count:
                     diff = current_count - target
-                    cursor.execute("DELETE FROM BuchExemplar WHERE titel_id = %s ORDER BY exemplar_id DESC LIMIT %s",
-                                   (t_id, diff))
-        finally:
-            conn.close()
+                    cursor.execute(
+                        "DELETE FROM BuchExemplar WHERE isbn = %s ORDER BY exemplar_id DESC LIMIT %s",
+                        (isbn, diff))
 
-    def delete_book(self, isbn):
-        conn = self._get_connection()
-        try:
-            with conn.cursor() as cursor:
-                cursor.execute("DELETE FROM BuchTitel WHERE isbn = %s", (isbn,))
+            conn.commit()
+        except Exception as e:
+            if conn: conn.rollback()
+            raise e
         finally:
             conn.close()
 
