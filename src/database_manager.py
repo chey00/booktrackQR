@@ -2,14 +2,14 @@
 # Projekt: BooktrackQR
 # Modul: database_manager.py
 # Autoren: René Bezold, Denis Sukkau, Georg Zinn
+# Sprint 4: Mustafa Demiral (Intelligente Get-or-Create DB Logik & ID-Handling)
 # Zweck: Zentrale Schnittstelle zur MariaDB auf dem Raspberry Pi.
-#        CRUD-Operationen (Create, Read, Update, Delete)
-#        für die Buchverwaltung.
 # ------------------------------------------------------------------------------
 
 import pymysql
 import os
 from dotenv import load_dotenv
+
 
 class DatabaseManager:
     def __init__(self):
@@ -33,6 +33,44 @@ class DatabaseManager:
             port=self.port,
             autocommit=True
         )
+
+    # --- MUSTAFA DEMIRAL: Sichere Automatik-Funktionen für den Import ---
+    def get_or_create_school_year(self, jahr_text):
+        """Sucht das Schuljahr oder legt es automatisch an."""
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT schuljahr_id FROM Schuljahr WHERE jahr = %s", (jahr_text,))
+                res = cursor.fetchone()
+                if res: return res[0]
+
+                cursor.execute("SELECT IFNULL(MAX(schuljahr_id), 0) + 1 FROM Schuljahr")
+                new_id = cursor.fetchone()[0]
+                cursor.execute("INSERT INTO Schuljahr (schuljahr_id, jahr) VALUES (%s, %s)", (new_id, jahr_text))
+                return new_id
+        finally:
+            conn.close()
+
+    def get_or_create_class(self, name, jahr_text):
+        """Sucht die Klasse oder legt sie sicher an, damit NIE ein NULL-Fehler entsteht."""
+        sj_id = self.get_or_create_school_year(jahr_text)
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT schulklasse_id FROM Schulklasse WHERE name = %s AND schuljahr_id = %s LIMIT 1",
+                               (name, sj_id))
+                res = cursor.fetchone()
+                if res: return res[0]
+
+                cursor.execute("SELECT IFNULL(MAX(schulklasse_id), 0) + 1 FROM Schulklasse")
+                new_kid = cursor.fetchone()[0]
+                cursor.execute("INSERT INTO Schulklasse (schulklasse_id, name, schuljahr_id) VALUES (%s, %s, %s)",
+                               (new_kid, name, sj_id))
+                return new_kid
+        finally:
+            conn.close()
+
+    # ---------------------------------------------------------------------
 
     # --- BUCHVERWALTUNG ---
 
@@ -73,8 +111,14 @@ class DatabaseManager:
                     cursor.execute("SELECT IFNULL(MAX(exemplar_id), 0) + 1 FROM BuchExemplar")
                     e_id = cursor.fetchone()[0]
                     qr = f"QR-{isbn}-{i}"
-                    sql_ex = "INSERT INTO BuchExemplar (exemplar_id, titel_id, exemplar_nr, qr_code) VALUES (%s, %s, %s, %s)"
-                    cursor.execute(sql_ex, (e_id, t_id, i, qr))
+
+                    sql_ex = "INSERT INTO BuchExemplar (exemplar_id, isbn, exemplar_nr, qr_code) VALUES (%s, %s, %s, %s)"
+                    cursor.execute(sql_ex, (e_id, isbn, i, qr))
+
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            raise e
         finally:
             conn.close()
 
@@ -109,167 +153,151 @@ class DatabaseManager:
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
-                sql = "DELETE FROM BuchTitel WHERE isbn = %s"
-                cursor.execute(sql, (isbn,))
+                cursor.execute("DELETE FROM BuchTitel WHERE isbn = %s", (isbn,))
         finally:
             conn.close()
 
     # --- SCHÜLERVERWALTUNG ---
 
+    # MUSTAFA DEMIRAL: Berechnet die formatierte ID (z.B. MB_2024-25_001) dynamisch pro Klasse!
     def get_students(self, search_text=""):
-        """Holt Schülerdaten aus der View v_studierende_ausleihen."""
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
+                # Holt IMMER alle Schüler sortiert nach ihrer Eintragungs-Reihenfolge
                 sql = """
-                    SELECT DISTINCT studierende_id, nachname, vorname, schulklasse, schuljahr 
-                    FROM v_studierende_ausleihen
-                """
-                params = []
-                if search_text:
-                    sql += " WHERE nachname LIKE %s OR vorname LIKE %s OR schulklasse LIKE %s"
-                    like_val = f"%{search_text}%"
-                    params = [like_val, like_val, like_val]
-
-                sql += " ORDER BY nachname ASC"
-                cursor.execute(sql, params)
-                return cursor.fetchall()
+                      SELECT DISTINCT studierende_id, nachname, vorname, schulklasse, schuljahr
+                      FROM v_studierende_ausleihen
+                      ORDER BY studierende_id ASC \
+                      """
+                cursor.execute(sql)
+                all_students = cursor.fetchall()
         finally:
             conn.close()
 
+        class_counters = {}
+        processed_students = []
+
+        # 1. Fortlaufende Nummer PRO KLASSE berechnen!
+        for row in all_students:
+            db_id, nachname, vorname, klasse, jahr = row
+            key = f"{klasse}_{jahr}"
+
+            class_counters[key] = class_counters.get(key, 0) + 1
+            lfd_nr = class_counters[key]
+
+            safe_jahr = str(jahr).replace('/', '-')
+            formatted_id = f"{klasse}_{safe_jahr}_{lfd_nr:03d}"
+
+            # Hängt die neu berechnete, perfekt formatierte ID als 6. Spalte an
+            processed_students.append((db_id, nachname, vorname, klasse, jahr, formatted_id))
+
+        # 2. Jetzt erst den Suchfilter anwenden (inklusive der neuen schönen ID)
+        if search_text:
+            filtered = []
+            st = search_text.lower()
+            for s in processed_students:
+                if (st in s[5].lower() or st in s[1].lower() or
+                        st in s[2].lower() or st in s[3].lower() or st in str(s[4]).lower()):
+                    filtered.append(s)
+            return filtered
+
+        return processed_students
+
     def get_classes(self):
-        """Holt alle Schulklassen für den 'Klassen'-Tab."""
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
-                sql = "SELECT schuljahr, schulklasse, anzahl_schueler FROM v_schulklasse_uebersicht ORDER BY schuljahr DESC, schulklasse ASC"
-                cursor.execute(sql)
+                cursor.execute(
+                    "SELECT schuljahr, schulklasse, anzahl_schueler FROM v_schulklasse_uebersicht ORDER BY schuljahr DESC, schulklasse ASC")
                 return cursor.fetchall()
         finally:
             conn.close()
 
     def get_school_years(self):
-        """Holt alle Schuljahre aus der Tabelle Schuljahr."""
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
-                sql = "SELECT schuljahr_id, jahr FROM Schuljahr ORDER BY jahr DESC"
-                cursor.execute(sql)
+                cursor.execute("SELECT schuljahr_id, jahr FROM Schuljahr ORDER BY jahr DESC")
                 return cursor.fetchall()
         finally:
             conn.close()
 
     def delete_student(self, student_id):
-        """Löscht einen Studenten anhand seiner ID."""
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
-                sql = "DELETE FROM Studierende WHERE studierende_id = %s"
-                cursor.execute(sql, (student_id,))
+                cursor.execute("DELETE FROM Studierende WHERE studierende_id = %s", (student_id,))
         finally:
             conn.close()
 
     def get_student_by_id(self, student_id):
-        """Holt Details eines Schülers inklusive Klassenname."""
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
                 sql = """
-                    SELECT s.studierende_id, s.nachname, s.vorname, sk.name 
-                    FROM Studierende s
-                    JOIN Schulklasse sk ON s.schulklasse_id = sk.schulklasse_id
-                    WHERE s.studierende_id = %s
-                """
+                      SELECT s.studierende_id, s.nachname, s.vorname, sk.name, sj.jahr
+                      FROM Studierende s
+                               JOIN Schulklasse sk ON s.schulklasse_id = sk.schulklasse_id
+                               JOIN Schuljahr sj ON sk.schuljahr_id = sj.schuljahr_id
+                      WHERE s.studierende_id = %s \
+                      """
                 cursor.execute(sql, (student_id,))
                 return cursor.fetchone()
         finally:
             conn.close()
 
     def add_student(self, nachname, vorname, klasse, schuljahr):
-        """Legt einen neuen Schüler an (mit Status 'AKTIV')."""
+        klasse_id = self.get_or_create_class(klasse, schuljahr)
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
-                # 1. Neue ID holen
                 cursor.execute("SELECT IFNULL(MAX(studierende_id), 0) + 1 FROM Studierende")
                 new_id = cursor.fetchone()[0]
 
-                # 2. Einfügen (Status 'AKTIV' ist Pflicht laut SQL)
                 sql = """
-                    INSERT INTO Studierende (studierende_id, vorname, nachname, status, schulklasse_id) 
-                    VALUES (%s, %s, %s, 'AKTIV', 
-                        (SELECT schulklasse_id FROM Schulklasse WHERE name = %s LIMIT 1))
-                """
-                cursor.execute(sql, (new_id, vorname, nachname, klasse))
+                      INSERT INTO Studierende (studierende_id, vorname, nachname, status, schulklasse_id)
+                      VALUES (%s, %s, %s, 'AKTIV', %s) \
+                      """
+                cursor.execute(sql, (new_id, vorname, nachname, klasse_id))
         finally:
             conn.close()
 
     def update_student(self, student_id, nachname, vorname, klasse, schuljahr):
-        """Aktualisiert Schülerdaten."""
+        klasse_id = self.get_or_create_class(klasse, schuljahr)
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
                 sql = """
-                    UPDATE Studierende 
-                    SET vorname = %s, nachname = %s, 
-                        schulklasse_id = (SELECT schulklasse_id FROM Schulklasse WHERE name = %s LIMIT 1)
-                    WHERE studierende_id = %s
-                """
-                cursor.execute(sql, (vorname, nachname, klasse, student_id))
+                      UPDATE Studierende
+                      SET vorname        = %s, \
+                          nachname       = %s, \
+                          schulklasse_id = %s
+                      WHERE studierende_id = %s \
+                      """
+                cursor.execute(sql, (vorname, nachname, klasse_id, student_id))
         finally:
             conn.close()
 
     def add_class(self, name, jahr_text):
-        conn = self._get_connection()
         try:
-            with conn.cursor() as cursor:
-                cursor.execute("SELECT schuljahr_id FROM Schuljahr WHERE jahr = %s", (jahr_text,))
-                res = cursor.fetchone()
-                if not res: return False # Schuljahr existiert nicht
-                sj_id = res[0]
-
-                cursor.execute("SELECT IFNULL(MAX(schulklasse_id), 0) + 1 FROM Schulklasse")
-                new_kid = cursor.fetchone()[0]
-
-                sql = "INSERT INTO Schulklasse (schulklasse_id, name, schuljahr_id) VALUES (%s, %s, %s)"
-                cursor.execute(sql, (new_kid, name, sj_id))
-                return True
-        finally:
-            conn.close()
+            self.get_or_create_class(name, jahr_text)
+            return True
+        except:
+            return False
 
     def delete_class(self, klasse_name, jahr_text):
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
-                sql = """
-                    DELETE FROM Schulklasse 
-                    WHERE name = %s AND schuljahr_id = (SELECT schuljahr_id FROM Schuljahr WHERE jahr = %s)
-                """
+                sql = "DELETE FROM Schulklasse WHERE name = %s AND schuljahr_id = (SELECT schuljahr_id FROM Schuljahr WHERE jahr = %s LIMIT 1)"
                 cursor.execute(sql, (klasse_name, jahr_text))
         finally:
             conn.close()
 
     def add_school_year(self, jahr_text):
-        """Legt ein neues Schuljahr an."""
-        conn = self._get_connection()
         try:
-            with conn.cursor() as cursor:
-                # Prüfen, ob das Jahr schon existiert, um Duplikate zu vermeiden
-                cursor.execute("SELECT 1 FROM Schuljahr WHERE jahr = %s", (jahr_text,))
-                if cursor.fetchone():
-                    return False
-
-                cursor.execute("SELECT IFNULL(MAX(schuljahr_id), 0) + 1 FROM Schuljahr")
-                new_id = cursor.fetchone()[0]
-                sql = "INSERT INTO Schuljahr (schuljahr_id, jahr) VALUES (%s, %s)"
-                cursor.execute(sql, (new_id, jahr_text))
-                return True
-        except Exception as e:
-            print(f"DB Error: {e}")
+            self.get_or_create_school_year(jahr_text)
+            return True
+        except:
             return False
-        finally:
-            conn.close()
-
-
-
-

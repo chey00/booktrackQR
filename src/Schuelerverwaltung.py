@@ -3,11 +3,12 @@
 # Modul: Gesamte Verwaltung (Schüler, Klassen, Schuljahre)
 # Sprint 2 Autoren: Mustafa Demiral, Ahmet Toplar
 # Sprint 3 Autoren: Mustafa Demiral, Luis Overrath
-# Stand: ID-Generierung gefixt, Breadcrumbs optimiert, Tabellen-Schrift schwarz
+# Sprint 4 Autoren: Mustafa Demiral (Dynamische ID-Kalkulation, Mac-Design-Fixes)
+# Stand: Perfekte dynamische Schüler-IDs, Design & schwarze Schrift repariert
 # ------------------------------------------------------------------------------
 
 import os
-import csv  # Luis Overrath: Import für die CSV-Verarbeitung
+import csv
 from PyQt6.QtWidgets import (
     QWidget, QPushButton, QVBoxLayout,
     QLabel, QHBoxLayout, QTableWidget, QTableWidgetItem,
@@ -15,11 +16,10 @@ from PyQt6.QtWidgets import (
     QFileDialog, QMessageBox, QTabWidget
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont, QPixmap
+from PyQt6.QtGui import QFont, QPixmap, QBrush  # QBrush für erzwungene schwarze Schrift
 from database_manager import DatabaseManager
 
 
-# Hilfsfunktion für einheitliche Buttons (spart sehr viel Code für alle Module)
 def get_btn_style(bg_color, text_color="white"):
     return f"""
     QPushButton {{ background-color: {bg_color}; color: {text_color}; padding: 8px 20px;
@@ -29,61 +29,45 @@ def get_btn_style(bg_color, text_color="white"):
     """
 
 
-# Hilfsfunktion für den Import-Button (Weißer Hintergrund, grauer Rand)
 def get_import_btn_style():
     return """
     QPushButton {
-        background-color: #FFFFFF;
-        color: #333333;
-        padding: 8px 20px;
-        border: 3px solid #E0E0E0;
-        border-radius: 6px;
-        font-weight: bold;
-        font-size: 14px;
+        background-color: #FFFFFF; color: #333333; padding: 8px 20px;
+        border: 3px solid #E0E0E0; border-radius: 6px; font-weight: bold; font-size: 14px;
     }
     QPushButton:hover, QPushButton:focus { border: 3px solid #000000; }
     QPushButton:pressed { background-color: #F0F0F0; border: 3px solid #000000; color: #333333; }
     """
 
 
-# --- Ahmet: Bestätigungsdialog für das Löschen von Datensätzen (Zentral für alle) ---
 class DeleteConfirmDialog(QDialog):
     def __init__(self, parent=None, warning_text="⚠️ Möchten Sie diesen Datensatz wirklich\nunwiderruflich löschen?"):
         super().__init__(parent)
         self.setWindowTitle("Löschen bestätigen")
         self.setFixedSize(400, 180)
         self.setStyleSheet("background-color: #FFFFFF;")
-
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-
         self.label = QLabel(warning_text)
         self.label.setFont(QFont("Open Sans", 11, QFont.Weight.Bold))
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.label.setStyleSheet("color: #333333; margin-bottom: 10px;")
         layout.addWidget(self.label)
-
-        # Auswahlbuttons (Abbrechen / Löschen)
         btn_layout = QHBoxLayout()
         self.btn_no = QPushButton("Abbrechen")
         self.btn_yes = QPushButton("Löschen")
-
         self.btn_yes.setStyleSheet(get_btn_style("#D32F2F"))
         self.btn_no.setStyleSheet(get_btn_style("#E0E0E0", "#333333"))
-
         self.btn_yes.clicked.connect(self.accept)
         self.btn_no.clicked.connect(self.reject)
-
         btn_layout.addWidget(self.btn_no)
         btn_layout.addWidget(self.btn_yes)
         layout.addLayout(btn_layout)
 
 
 # ==============================================================================
-# DIALOGE FÜR DIE VERWALTUNG (Schüler, Klassen, Schuljahre)
+# DIALOGE
 # ==============================================================================
 
-# --- Mustafa: Eingabemaske für Schüler-Daten ---
 class StudentDialog(QDialog):
     def __init__(self, parent=None, student_data=None):
         super().__init__(parent)
@@ -100,10 +84,8 @@ class StudentDialog(QDialog):
         form_layout = QFormLayout()
         form_layout.setSpacing(15)
 
-        # Eingabefelder
         self.input_vorname = QLineEdit()
         self.input_vorname.setPlaceholderText("Vorname eingeben")
-
         self.input_nachname = QLineEdit()
         self.input_nachname.setPlaceholderText("Nachname eingeben")
 
@@ -120,19 +102,17 @@ class StudentDialog(QDialog):
         self.error_label.setStyleSheet("color: #D32F2F; font-size: 12px; font-style: italic;")
         self.error_label.hide()
 
-        # Ahmet: Bestehende Daten laden, falls Bearbeitungsmodus
         if student_data:
-            self.input_nachname.setText(student_data[1])
-            self.input_vorname.setText(student_data[2])
-            self.combo_klasse.setCurrentText(student_data[3])
+            self.input_nachname.setText(str(student_data[1]))
+            self.input_vorname.setText(str(student_data[2]))
+            self.combo_klasse.setCurrentText(str(student_data[3]))
             if len(student_data) > 4:
-                self.combo_jahr.setCurrentText(student_data[4])
+                self.combo_jahr.setCurrentText(str(student_data[4]))
 
         form_layout.addRow(QLabel("Vorname*:"), self.input_vorname)
         form_layout.addRow(QLabel("Nachname*:"), self.input_nachname)
         form_layout.addRow(QLabel("Klasse*:"), self.combo_klasse)
         form_layout.addRow(QLabel("Schuljahr*:"), self.combo_jahr)
-
         layout.addLayout(form_layout)
         layout.addWidget(self.error_label)
         layout.addStretch()
@@ -140,10 +120,8 @@ class StudentDialog(QDialog):
         btn_layout = QHBoxLayout()
         self.btn_cancel = QPushButton("Abbrechen")
         self.btn_save = QPushButton("Speichern")
-
         self.btn_cancel.setStyleSheet(get_btn_style("#E0E0E0", "#333333"))
         self.btn_save.setStyleSheet(get_btn_style("#F1BD4D"))
-
         self.btn_cancel.clicked.connect(self.reject)
         self.btn_save.clicked.connect(self.validate_and_save)
 
@@ -173,7 +151,6 @@ class StudentDialog(QDialog):
             self.accept()
 
 
-# --- Luis: Dialog für Klassenverwaltung ---
 class KlassenDialog(QDialog):
     def __init__(self, parent=None, klassen_data=None):
         super().__init__(parent)
@@ -210,10 +187,8 @@ class KlassenDialog(QDialog):
         btn_layout = QHBoxLayout()
         self.btn_cancel = QPushButton("Abbrechen")
         self.btn_save = QPushButton("Speichern")
-
         self.btn_cancel.setStyleSheet(get_btn_style("#E0E0E0", "#333333"))
         self.btn_save.setStyleSheet(get_btn_style("#F1BD4D"))
-
         self.btn_cancel.clicked.connect(self.reject)
         self.btn_save.clicked.connect(self.accept)
 
@@ -223,7 +198,6 @@ class KlassenDialog(QDialog):
         layout.addLayout(btn_layout)
 
 
-# --- Luis: Dialog für Schuljahrverwaltung ---
 class SchuljahrDialog(QDialog):
     def __init__(self, parent=None, jahr_data=None):
         super().__init__(parent)
@@ -253,10 +227,8 @@ class SchuljahrDialog(QDialog):
         btn_layout = QHBoxLayout()
         self.btn_cancel = QPushButton("Abbrechen")
         self.btn_save = QPushButton("Speichern")
-
         self.btn_cancel.setStyleSheet(get_btn_style("#E0E0E0", "#333333"))
         self.btn_save.setStyleSheet(get_btn_style("#F1BD4D"))
-
         self.btn_cancel.clicked.connect(self.reject)
         self.btn_save.clicked.connect(self.accept)
 
@@ -267,7 +239,7 @@ class SchuljahrDialog(QDialog):
 
 
 # ==============================================================================
-# BEREICH 2: REITER (TABS) INHALTE
+# TABS
 # ==============================================================================
 
 class BaseTab(QWidget):
@@ -288,7 +260,8 @@ class BaseTab(QWidget):
         self.table.setAlternatingRowColors(True)
         self.table.setShowGrid(True)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        # Tabellen-Design mit erzwungener schwarzer Schrift
+
+        # --- MUSTAFA DEMIRAL: Sicheres Tabellen-Design für MacOS ---
         self.table.setStyleSheet("""
             QTableWidget { 
                 background-color: #FFFFFF; 
@@ -296,12 +269,13 @@ class BaseTab(QWidget):
                 border: 1px solid #E0E0E0; 
                 border-radius: 8px; 
                 gridline-color: #EDEDED;
-                color: #333333; 
+                color: #000000; 
                 font-size: 14px;
             }
-            QTableWidget::item {
-                color: #333333;
-            }
+        """)
+
+        # Den gelben Strich und Header sicher isolieren!
+        self.table.horizontalHeader().setStyleSheet("""
             QHeaderView::section { 
                 background-color: #F0F0F0; 
                 color: #333333;
@@ -311,6 +285,7 @@ class BaseTab(QWidget):
                 padding: 12px; 
             }
         """)
+
         self.main_layout.addWidget(self.table)
 
     def show_popup(self, title, text):
@@ -322,18 +297,16 @@ class BaseTab(QWidget):
         msg.exec()
 
 
-# --- Mustafa, René: Logik für den Schüler-Reiter ---
 class SchuelerTab(BaseTab):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.db_manager = parent.db_manager if parent else None
 
-        self.db_manager = DatabaseManager()
-
-        # UI-Setup (Filter Layout)
         action_layout = QHBoxLayout()
         action_layout.setSpacing(20)
+
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("🔍 Suche nach ID, Name oder Klasse...")
+        self.search_input.setPlaceholderText("🔍 Suche nach Name, Klasse oder Jahr...")
         self.search_input.setFixedWidth(400)
         self.search_input.setStyleSheet(self.input_style)
 
@@ -353,11 +326,10 @@ class SchuelerTab(BaseTab):
         action_layout.addWidget(self.filter_jahr)
         self.main_layout.addLayout(action_layout)
 
-        # Tabelle initialisieren
         self.setup_table(6, ["ID", "Nachname", "Vorname", "Klasse", "Schuljahr", "Aktionen"])
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
-        self.table.setColumnWidth(0, 140)
+        self.table.setColumnWidth(0, 160)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
@@ -367,7 +339,6 @@ class SchuelerTab(BaseTab):
         header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
         self.table.setColumnWidth(5, 120)
 
-        # Footer
         footer_layout = QHBoxLayout()
         btn_add = QPushButton("➕ Schüler hinzufügen")
         btn_add.setStyleSheet(get_btn_style("#F1BD4D"))
@@ -388,26 +359,42 @@ class SchuelerTab(BaseTab):
         self.filter_combo.currentTextChanged.connect(self.refresh_data)
         self.filter_jahr.currentTextChanged.connect(self.refresh_data)
 
-        self.refresh_data()
+        if self.db_manager:
+            self.refresh_data()
 
     def refresh_data(self):
-        search_text = self.search_input.text()
-        all_matching_students = self.db_manager.get_students(search_text)
+        if not self.db_manager: return
+        search_text = self.search_input.text().lower()
+        all_matching_students = self.db_manager.get_students()
 
         selected_klasse = self.filter_combo.currentText()
         selected_jahr = self.filter_jahr.currentText()
 
-        filtered_students = [
-            s for s in all_matching_students
-            if (selected_klasse == "Klassen (Alle)" or s[3] == selected_klasse) and
-               (selected_jahr == "Schuljahre (Alle)" or s[4] == selected_jahr)
-        ]
+        filtered_students = []
+        for s in all_matching_students:
+            db_id_str = str(s[0])
+            nachname = str(s[1]).lower()
+            vorname = str(s[2]).lower()
+            klasse = str(s[3])
+            jahr = str(s[4])
+
+            safe_jahr = jahr.replace('/', '-')
+            try:
+                formatted_id = f"{klasse}_{safe_jahr}_{int(db_id_str):03d}".lower()
+            except (ValueError, TypeError):
+                formatted_id = db_id_str.lower()
+
+            match_text = search_text in formatted_id or search_text in nachname or search_text in vorname
+            match_klasse = (selected_klasse == "Klassen (Alle)" or s[3] == selected_klasse)
+            match_jahr = (selected_jahr == "Schuljahre (Alle)" or s[4] == selected_jahr)
+
+            if match_text and match_klasse and match_jahr:
+                filtered_students.append(s)
 
         self.load_table_data(filtered_students)
 
     def load_table_data(self, data_list):
         self.table.setRowCount(len(data_list))
-
         btn_edit_style = """
             QPushButton { background: transparent; border: none; font-size: 16px; color: #333333; }
             QPushButton:hover { background-color: #E0E0E0; border-radius: 6px; }
@@ -418,10 +405,22 @@ class SchuelerTab(BaseTab):
         """
 
         for row, student in enumerate(data_list):
-            # student = (ID, Nachname, Vorname, Klasse, Jahr)
+            db_id = str(student[0])
+            nachname = str(student[1])
+            vorname = str(student[2])
+            klasse = str(student[3])
+            jahr = str(student[4])
+            formatted_id = str(student[5])
+
+            display_data = [formatted_id, nachname, vorname, klasse, jahr]
+
             for col in range(5):
-                item = QTableWidgetItem(str(student[col]))
+                item = QTableWidgetItem(display_data[col])
                 item.setFlags(item.flags() ^ Qt.ItemFlag.ItemIsEditable)
+
+                # --- MUSTAFA DEMIRAL: Zwingt Mac Os, die Schriftfarbe IMMER schwarz zu machen ---
+                item.setForeground(QBrush(Qt.GlobalColor.black))
+
                 if col in [0, 3, 4]: item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.table.setItem(row, col, item)
 
@@ -433,20 +432,17 @@ class SchuelerTab(BaseTab):
             btn_edit = QPushButton("✏️")
             btn_edit.setFixedSize(32, 32)
             btn_edit.setStyleSheet(btn_edit_style)
-            # Bearbeiten-Logik (muss noch auf DB umgestellt werden)
-            btn_edit.clicked.connect(lambda ch, sid=student[0]: self.edit_student(sid))
+            btn_edit.clicked.connect(lambda ch, sid=db_id: self.edit_student(sid))
 
             btn_delete = QPushButton("🗑️")
             btn_delete.setFixedSize(32, 32)
             btn_delete.setStyleSheet(btn_delete_style)
-            # Löschen direkt in der MariaDB
-            btn_delete.clicked.connect(lambda ch, sid=student[0]: self.delete_student(sid))
+            btn_delete.clicked.connect(lambda ch, sid=db_id: self.delete_student(sid))
 
             action_layout.addWidget(btn_edit)
             action_layout.addWidget(btn_delete)
             self.table.setCellWidget(row, 5, action_widget)
 
-    #Use Db Data from now on instead of dummy data, but keep the dummy data for testing purposes
     def open_student_dialog(self):
         d = StudentDialog(self)
         if d.exec() == QDialog.DialogCode.Accepted:
@@ -455,14 +451,14 @@ class SchuelerTab(BaseTab):
             klasse = d.combo_klasse.currentText()
             jahr = d.combo_jahr.currentText()
 
-            self.db_manager.add_student(nachname, vorname, klasse, jahr)
-
-            self.refresh_data()
-            self.show_popup("Erfolg", f"Schüler {vorname} {nachname} wurde angelegt.")
+            if self.db_manager:
+                self.db_manager.add_student(nachname, vorname, klasse, jahr)
+                self.refresh_data()
+                self.show_popup("Erfolg", f"Schüler {vorname} {nachname} wurde angelegt.")
 
     def edit_student(self, sid):
+        if not self.db_manager: return
         current_data = self.db_manager.get_student_by_id(sid)
-
         if current_data:
             d = StudentDialog(self, student_data=current_data)
             if d.exec() == QDialog.DialogCode.Accepted:
@@ -477,43 +473,79 @@ class SchuelerTab(BaseTab):
     def delete_student(self, sid):
         if DeleteConfirmDialog(self,
                                "⚠️ Möchten Sie diesen Schüler wirklich löschen?").exec() == QDialog.DialogCode.Accepted:
-            self.db_manager.delete_student(sid)
-            self.refresh_data()
+            if self.db_manager:
+                self.db_manager.delete_student(sid)
+                self.refresh_data()
 
     def import_students(self):
-        """Liest eine CSV und schreibt jeden Schüler einzeln in die MariaDB."""
-        file_path, _ = QFileDialog.getOpenFileName(self, "Schüler importieren", "", "CSV-Dateien (*.csv)")
-        if not file_path:
+        file_path, _ = QFileDialog.getOpenFileName(self, "Schüler importieren", "",
+                                                   "Dateien (*.csv *.xlsx);;Alle Dateien (*.*)")
+        if not file_path: return
+
+        if not self.db_manager:
+            self.show_popup("Fehler", "Keine Datenbankverbindung!")
             return
 
         try:
             imported_count = 0
-            with open(file_path, mode='r', encoding='utf-8') as file:
-                # Trenner ist laut deinem Code ';', Header wird übersprungen
-                reader = csv.reader(file, delimiter=';')
-                for row in reader:
-                    if len(row) >= 4 and row[0] != "Nachname":
-                        # Annahme: CSV Spalten = Nachname; Vorname; Klasse; Schuljahr
-                        nachname, vorname, klasse, jahr = [x.strip() for x in row[:4]]
 
-                        self.db_manager.add_student(nachname, vorname, klasse, jahr)
-                        imported_count += 1
+            if file_path.lower().endswith('.csv'):
+                with open(file_path, mode='r', encoding='utf-8-sig') as file:
+                    reader = csv.reader(file, delimiter=';')
+                    next(reader, None)
+
+                    for row in reader:
+                        if len(row) >= 5:
+                            vorname = row[1].strip()
+                            nachname = row[2].strip()
+                            klasse = row[3].strip()
+                            jahr = row[4].strip()
+
+                            if not vorname or not nachname: continue
+                            if klasse not in ["MB", "MT", "KI", "WI"]: continue
+
+                            try:
+                                self.db_manager.add_student(nachname, vorname, klasse, jahr)
+                                imported_count += 1
+                            except Exception as e:
+                                raise Exception(f"Fehler bei {vorname} {nachname}: {e}")
+
+            elif file_path.lower().endswith('.xlsx'):
+                try:
+                    import pandas as pd
+                except ImportError:
+                    self.show_popup("Fehler",
+                                    "Für den Excel-Import muss 'pandas' installiert sein!\nBitte führe 'pip install pandas openpyxl' im Terminal aus.")
+                    return
+
+                df = pd.read_excel(file_path)
+                for index, row in df.iterrows():
+                    try:
+                        vorname = str(row.get('Vorname', '')).strip()
+                        nachname = str(row.get('Nachname', '')).strip()
+                        klasse = str(row.get('Klasse', '')).strip()
+                        jahr = str(row.get('Eintrittsschuljahr', '')).strip()
+
+                        if nachname and vorname and nachname != 'nan':
+                            if klasse not in ["MB", "MT", "KI", "WI"]: continue
+
+                            self.db_manager.add_student(nachname, vorname, klasse, jahr)
+                            imported_count += 1
+                    except Exception as e:
+                        raise Exception(f"Fehler in Excel Zeile {index + 2}: {e}")
 
             self.refresh_data()
-            self.show_popup("Import fertig", f"{imported_count} Schüler wurden in die Datenbank geladen.")
+            self.show_popup("Import fertig", f"Erfolgreicher Import!\n\nEs wurden {imported_count} Schüler geladen.")
 
         except Exception as e:
-            self.show_popup("Fehler", f"CSV-Import fehlgeschlagen:\n{e}")
+            self.show_popup("Achtung", f"Der Import wurde abgebrochen:\n\n{e}")
 
 
-# --- Luis,René: Logik für den Klassen-Reiter ---
 class KlassenTab(BaseTab):
     def __init__(self, parent=None):
         super().__init__(parent)
-        # Zugriff auf den zentralen DatabaseManager vom MainWindow
         self.db_manager = parent.db_manager if parent else None
 
-        # --- FILTER-BEREICH (OBEN) ---
         action_layout = QHBoxLayout()
         action_layout.setSpacing(20)
 
@@ -524,9 +556,7 @@ class KlassenTab(BaseTab):
 
         self.filter_jahr = QComboBox()
         self.filter_jahr.addItem("Schuljahre (Alle)")
-        # Lädt die Jahre direkt beim Start aus der DB
         self.refresh_year_filter()
-
         self.filter_jahr.setFixedWidth(200)
         self.filter_jahr.setStyleSheet(self.input_style)
 
@@ -535,8 +565,6 @@ class KlassenTab(BaseTab):
         action_layout.addWidget(self.filter_jahr)
         self.main_layout.addLayout(action_layout)
 
-        # --- TABELLEN-KONFIGURATION ---
-        # Spalten: Schuljahr, Klasse, Anzahl Schüler, Aktionen
         self.setup_table(4, ["Schuljahr", "Klasse", "Anzahl Schüler", "Aktionen"])
         header = self.table.horizontalHeader()
         self.table.setColumnWidth(0, 150)
@@ -544,13 +572,10 @@ class KlassenTab(BaseTab):
         self.table.setColumnWidth(2, 150)
         self.table.setColumnWidth(3, 120)
 
-        # Event-Handler für Filter-Änderungen
         self.search_input.textChanged.connect(self.filter_table)
         self.filter_jahr.currentTextChanged.connect(self.filter_table)
 
-        # --- FOOTER (UNTEN) ---
         footer_layout = QHBoxLayout()
-
         btn_add = QPushButton("➕ Klasse hinzufügen")
         btn_add.setStyleSheet(get_btn_style("#F1BD4D"))
         btn_add.clicked.connect(self.open_klassen_dialog)
@@ -566,28 +591,20 @@ class KlassenTab(BaseTab):
         footer_layout.addWidget(self.btn_back)
         self.main_layout.addLayout(footer_layout)
 
-        # Daten beim ersten Öffnen laden
         self.filter_table()
 
     def refresh_year_filter(self):
-        """Befüllt das Dropdown-Menü mit den Schuljahren aus der Datenbank."""
         if self.db_manager:
             try:
                 jahre = self.db_manager.get_school_years()
                 for j in jahre:
-                    # j[1] entspricht der Spalte 'jahr' (z.B. '25/26')
                     self.filter_jahr.addItem(str(j[1]))
-            except Exception as e:
-                print(f"Fehler beim Laden der Schuljahre: {e}")
+            except Exception:
+                pass
 
     def filter_table(self):
-        """Holt Daten aus der View und wendet die UI-Filter an."""
-        if not self.db_manager:
-            return
-
-        # View liefert: (schuljahr, schulklasse, anzahl_schueler)
+        if not self.db_manager: return
         alle_klassen = self.db_manager.get_classes()
-
         txt = self.search_input.text().lower()
         jahr_filter = self.filter_jahr.currentText()
 
@@ -595,37 +612,28 @@ class KlassenTab(BaseTab):
         for k in alle_klassen:
             s_jahr = str(k[0])
             s_name = str(k[1])
-
-            # Textsuche in Name ODER Jahr
             match_txt = txt in s_name.lower() or txt in s_jahr.lower()
-            # Filter nach Jahr (oder Alle)
             match_jahr = (jahr_filter == "Schuljahre (Alle)" or jahr_filter == s_jahr)
-
             if match_txt and match_jahr:
                 gefiltert.append(k)
 
         self.load_table_data(gefiltert)
 
     def load_table_data(self, data_list):
-        """Befüllt das TableWidget und erstellt die Aktions-Buttons."""
         self.table.setRowCount(len(data_list))
-
         btn_style = "QPushButton { background: transparent; border: none; font-size: 16px; }"
 
         for row, klasse in enumerate(data_list):
-            # Daten-Zellen befüllen (Jahr, Klasse, Anzahl)
             for col in range(3):
                 item = QTableWidgetItem(str(klasse[col]))
-                item.setFlags(item.flags() ^ Qt.ItemFlag.ItemIsEditable)  # Nur Lesen
+                item.setFlags(item.flags() ^ Qt.ItemFlag.ItemIsEditable)
+                item.setForeground(QBrush(Qt.GlobalColor.black))  # Zwingend schwarz
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.table.setItem(row, col, item)
 
-            # Container für Buttons (✏️ und 🗑️)
             action_widget = QWidget()
             action_layout = QHBoxLayout(action_widget)
             action_layout.setContentsMargins(5, 2, 5, 2)
-
-            # Eindeutiger Identifier für die Callbacks (Name_Jahr)
             kid = f"{klasse[1]}_{klasse[0]}"
 
             btn_edit = QPushButton("✏️")
@@ -643,50 +651,41 @@ class KlassenTab(BaseTab):
             self.table.setCellWidget(row, 3, action_widget)
 
     def open_klassen_dialog(self):
-        """Öffnet den Dialog zum Hinzufügen einer neuen Klasse in die DB."""
         d = KlassenDialog(self)
         if d.exec() == QDialog.DialogCode.Accepted:
             name = d.input_name.text().strip()
             sj = d.combo_jahr.currentText()
             if name and sj != "Bitte wählen...":
-                # Datenbank-Aufruf
                 if self.db_manager.add_class(name, sj):
-                    self.filter_table()  # Tabelle aktualisieren
+                    self.filter_table()
                 else:
                     self.show_popup("Fehler", "Klasse konnte nicht gespeichert werden.")
 
     def edit_klasse(self, kid):
-        """Platzhalter für die Bearbeitungs-Logik (Update)."""
         self.show_popup("Info", f"Bearbeiten-Funktion für {kid} folgt in Kürze.")
 
     def delete_klasse(self, kid):
-        """Löscht die Klasse aus der Datenbank."""
         parts = kid.split('_')
         if len(parts) < 2: return
-
         name, jahr = parts[0], parts[1]
         msg = f"⚠️ Möchten Sie die Klasse '{name}' ({jahr}) wirklich löschen?\n\nDadurch werden auch alle zugeordneten Schüler entfernt!"
 
         if DeleteConfirmDialog(self, msg).exec() == QDialog.DialogCode.Accepted:
             try:
                 self.db_manager.delete_class(name, jahr)
-                self.filter_table()  # Refresh
+                self.filter_table()
             except Exception as e:
                 self.show_popup("Fehler", f"Löschen fehlgeschlagen: {e}")
 
     def import_klassen(self):
-        """Anbindung an CSV-Import."""
         self.show_popup("Info", "Import-Schnittstelle wird für MariaDB optimiert.")
 
 
-# --- Luis: Logik für den Schuljahr-Reiter ---
 class SchuljahrTab(BaseTab):
     def __init__(self, parent=None):
         super().__init__(parent)
-        # WICHTIG: Den db_manager vom parent holen
         self.db_manager = parent.db_manager if parent else None
 
-        # Filter-Bereich
         action_layout = QHBoxLayout()
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("🔍 Suche nach Schuljahr...")
@@ -696,7 +695,6 @@ class SchuljahrTab(BaseTab):
         action_layout.addStretch()
         self.main_layout.addLayout(action_layout)
 
-        # Tabelle Setup
         self.setup_table(3, ["ID", "Schuljahr", "Aktionen"])
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
@@ -707,12 +705,9 @@ class SchuljahrTab(BaseTab):
 
         self.search_input.textChanged.connect(self.filter_table)
 
-        # Footer
         footer_layout = QHBoxLayout()
         btn_add = QPushButton("➕ Schuljahr hinzufügen")
         btn_add.setStyleSheet(get_btn_style("#F1BD4D"))
-
-        # HIER war der Fehler: Die Methode muss existieren!
         btn_add.clicked.connect(self.open_jahr_dialog)
 
         btn_import = QPushButton("📥 Schuljahre importieren")
@@ -726,20 +721,16 @@ class SchuljahrTab(BaseTab):
         footer_layout.addWidget(self.btn_back)
         self.main_layout.addLayout(footer_layout)
 
-        # Daten initial laden
         self.filter_table()
 
     def filter_table(self):
-        """Holt Daten aus der DB und filtert sie."""
-        if not self.db_manager:
-            return
+        if not self.db_manager: return
         txt = self.search_input.text().lower()
         alle_jahre = self.db_manager.get_school_years()
         gefiltert = [j for j in alle_jahre if txt in str(j[1]).lower()]
         self.load_table_data(gefiltert)
 
     def load_table_data(self, data_list):
-        """Befüllt die UI Tabelle."""
         self.table.setRowCount(len(data_list))
         btn_style = "QPushButton { background: transparent; border: none; font-size: 16px; }"
 
@@ -747,6 +738,7 @@ class SchuljahrTab(BaseTab):
             for col in range(2):
                 item = QTableWidgetItem(str(jahr_row[col]))
                 item.setFlags(item.flags() ^ Qt.ItemFlag.ItemIsEditable)
+                item.setForeground(QBrush(Qt.GlobalColor.black))  # Zwingend schwarz
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.table.setItem(row, col, item)
 
@@ -763,8 +755,6 @@ class SchuljahrTab(BaseTab):
             self.table.setCellWidget(row, 2, action_widget)
 
     def open_jahr_dialog(self):
-        """Öffnet den Dialog und speichert in die DB."""
-        # Falls SchuljahrDialog in einer anderen Datei liegt: from dialogs import SchuljahrDialog
         d = SchuljahrDialog(self)
         if d.exec() == QDialog.DialogCode.Accepted:
             name = d.input_name.text().strip()
@@ -773,7 +763,6 @@ class SchuljahrTab(BaseTab):
                 self.filter_table()
 
     def delete_jahr(self, jid):
-        """Löscht ein Jahr aus der Datenbank."""
         if DeleteConfirmDialog(self, "⚠️ Schuljahr wirklich löschen?").exec() == QDialog.DialogCode.Accepted:
             try:
                 conn = self.db_manager._get_connection()
@@ -781,18 +770,17 @@ class SchuljahrTab(BaseTab):
                     cursor.execute("DELETE FROM Schuljahr WHERE schuljahr_id = %s", (jid,))
                 conn.close()
                 self.filter_table()
-            except Exception as e:
+            except Exception:
                 self.show_popup("Fehler", "Löschen nicht möglich (Klassen vorhanden).")
 
     def import_jahre(self):
         self.show_popup("Info", "Import-Funktion wird vorbereitet.")
 
+
 # ==============================================================================
-# BEREICH 3: DAS HAUPT-WIDGET (Container)
+# CONTAINER
 # ==============================================================================
 
-# WICHTIG: Die Klasse muss SchuelerverwaltungWidget heißen,
-# damit MainWindow.py sie per Import findet!
 class SchuelerverwaltungWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -803,66 +791,75 @@ class SchuelerverwaltungWidget(QWidget):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(50, 30, 50, 30)
 
-        # Header Bereich
-        header_layout = QHBoxLayout()
-        title_container = QVBoxLayout()
+        top_header_layout = QHBoxLayout()
+        dummy_left = QWidget()
+        dummy_left.setFixedWidth(200)
+        top_header_layout.addWidget(dummy_left)
 
         title_label = QLabel("BooktrackQR")
         title_label.setFont(QFont("Open Sans", 45, QFont.Weight.Bold))
         title_label.setStyleSheet("color: #333333;")
-
-        # Dynamisches Breadcrumb
-        self.breadcrumb_label = QLabel("Startseite > Hauptmenü > Schülerverwaltung > Schüler")
-        self.breadcrumb_label.setStyleSheet("color: #666666; font-style: italic;")
-
-        # Dynamischer Seiten-Titel
-        self.page_title = QLabel("Schülerverwaltung")
-        self.page_title.setFont(QFont("Open Sans", 24, QFont.Weight.Bold))
-        self.page_title.setStyleSheet("color: #F1BD4D;")
-
-        title_container.addWidget(title_label)
-        title_container.addWidget(self.breadcrumb_label)
-        title_container.addWidget(self.page_title)
-
-        header_layout.addLayout(title_container)
-        header_layout.addStretch()
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        top_header_layout.addWidget(title_label)
 
         logo_label = QLabel()
-        # Pfad zum Logo ggf. anpassen
         pixmap = QPixmap(os.path.join(os.path.dirname(__file__), "..", "pic", "technikerschule_logo.png"))
         if not pixmap.isNull():
             logo_label.setPixmap(
                 pixmap.scaled(200, 80, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-        header_layout.addWidget(logo_label)
-        main_layout.addLayout(header_layout)
+        logo_label.setFixedWidth(200)
+        logo_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        top_header_layout.addWidget(logo_label)
 
+        main_layout.addLayout(top_header_layout)
+
+        sub_header_layout = QVBoxLayout()
+        sub_header_layout.setSpacing(5)
+
+        self.breadcrumb_label = QLabel("Startseite > Hauptmenü > Schülerverwaltung > Schüler")
+        self.breadcrumb_label.setStyleSheet("color: #666666; font-style: italic;")
+
+        self.page_title = QLabel("Schülerverwaltung")
+        self.page_title.setFont(QFont("Open Sans", 24, QFont.Weight.Bold))
+        self.page_title.setStyleSheet("color: #F1BD4D;")
+
+        sub_header_layout.addWidget(self.breadcrumb_label)
+        sub_header_layout.addWidget(self.page_title)
+
+        main_layout.addLayout(sub_header_layout)
         main_layout.addSpacing(15)
 
-        # Tab Widget
         self.tabs = QTabWidget()
         self.tabs.tabBar().setDocumentMode(True)
         self.tabs.tabBar().setExpanding(True)
+
+        # --- MUSTAFA DEMIRAL: Reines sauberes Tab-Design ---
         self.tabs.setStyleSheet("""
-            QTabWidget::pane { border: 1px solid #CCCCCC; border-radius: 4px; background: white; }
-            QTabBar { qproperty-expanding: 1; }
+            QTabWidget::pane { 
+                border: 1px solid #CCCCCC; 
+                border-radius: 4px; 
+                background-color: #FFFFFF; 
+            }
             QTabBar::tab { 
-                background: #F0F0F0; 
+                background-color: #F0F0F0; 
                 color: #333333; 
                 padding: 12px 0px; 
                 font-weight: bold; 
-                font-size: 15px;
+                font-size: 15px; 
                 border: 1px solid #CCCCCC;
-                border-bottom: none;
-                border-top-left-radius: 6px;
+                border-bottom: none; 
+                border-top-left-radius: 6px; 
                 border-top-right-radius: 6px;
                 margin-right: 2px;
             }
             QTabBar::tab:selected { 
-                background: #F1BD4D; 
-                color: white; 
-                border-color: #F1BD4D;
+                background-color: #F1BD4D; 
+                color: #FFFFFF; 
+                border-color: #F1BD4D; 
             }
-            QTabBar::tab:hover:!selected { background: #E0E0E0; }
+            QTabBar::tab:hover:!selected { 
+                background-color: #E0E0E0; 
+            }
         """)
 
         self.tab_schueler = SchuelerTab(self)
@@ -874,21 +871,15 @@ class SchuelerverwaltungWidget(QWidget):
         self.tabs.addTab(self.tab_schuljahr, "📅 Schuljahre")
 
         self.tabs.currentChanged.connect(self.update_header_text)
-
         main_layout.addWidget(self.tabs)
 
-        # UNSICHTBARER DUMMY-BUTTON für die MainWindow.py Verknüpfung
-        # MainWindow.py erwartet einen Button namens 'btn_back' direkt im Widget
         self.btn_back = QPushButton()
         self.btn_back.hide()
-
-        # Alle internen Zurück-Buttons lösen den Haupt-Zurück-Button aus
         self.tab_schueler.btn_back.clicked.connect(self.btn_back.click)
         self.tab_klassen.btn_back.clicked.connect(self.btn_back.click)
         self.tab_schuljahr.btn_back.clicked.connect(self.btn_back.click)
 
     def update_header_text(self, index):
-        """Aktualisiert Breadcrumb und Titel je nach ausgewähltem Tab"""
         if index == 0:
             self.breadcrumb_label.setText("Startseite > Hauptmenü > Schülerverwaltung > Schüler")
             self.page_title.setText("Schülerverwaltung")
