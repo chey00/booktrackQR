@@ -67,6 +67,7 @@ class DeleteConfirmDialog(QDialog):
 
 
 # --- MUSTAFA DEMIRAL (Sprint 5): Neuer Dialog für Schüler (Soft-Delete vs. Passwort-Delete) ---
+# --- Passwort hierfür ist "admin123" ---
 class StudentDeleteDialog(QDialog):
     def __init__(self, parent=None, student_name=""):
         super().__init__(parent)
