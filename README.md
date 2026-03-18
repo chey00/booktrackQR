@@ -85,3 +85,59 @@ Das System ist so ausgelegt, dass typische Fehler **klar abgefangen** werden:
 * **Nachvollziehbarkeit**, wer welches Buch hat
 * **Einfache Bedienung**, auch unter Zeitdruck
 * **Zentrale Datenhaltung** statt Excel oder Papierlisten
+
+**Aktueller Stand (macOS Testbuild)**
+
+* App wurde erfolgreich als macOS `.app` gebaut
+* `.dmg` wurde erstellt und getestet
+* App kann installiert und gestartet werden
+* Interne Testverteilung ist möglich
+
+**Installation (macOS)**
+
+1. `.dmg` öffnen
+2. App per Drag & Drop nach „Applications“ ziehen
+3. App aus „Applications“ starten
+
+Hinweis: App nicht direkt aus dem DMG starten.
+
+**Wichtige Voraussetzung: `.env`**
+
+Die `.env` wird **nicht** mitgeliefert und **nicht** im Repository gespeichert.  
+Sie muss manuell erstellt werden unter:
+
+`~/Library/Application Support/BooktrackQR/.env`
+
+Beispiel:
+```
+DB_HOST=192.168.10.195
+DB_PORT=3306
+DB_NAME=booksdb
+DB_USER=booksuser
+DB_PASSWORD=Fswi-2!
+DB_CONNECT_TIMEOUT=20
+```
+
+Ohne `.env` startet die App nicht.  
+Dies ist eine bewusste Sicherheitsentscheidung.
+
+**Erster Start unter macOS**
+
+* App ist aktuell **nicht signiert** und **nicht notarisiert**
+* macOS kann beim ersten Start eine Sicherheitswarnung anzeigen
+* Lösung:
+  Rechtsklick auf die App → „Öffnen“ → Bestätigen
+
+**Aktuelle Einschränkungen**
+
+* keine Code-Signierung
+* keine Notarization
+* `.env` muss manuell erstellt werden
+* QR-Druckfunktion ist aktuell nur Stub
+* QR-Scanner ist nachrangig
+
+**Hinweis für Entwickler**
+
+* Projekt kann weiterhin lokal über Python gestartet werden
+* Build erfolgt über PyInstaller
+* `.dmg` wird über Script erstellt: `scripts/create_dmg.sh`
