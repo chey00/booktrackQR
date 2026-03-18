@@ -496,7 +496,7 @@ class BuchverwaltungWidget(QWidget):
                 self.data_stack.show_error(f"Fehler beim Hinzufügen: {str(e)}")
 
     # --------------------------------------------------------------------------
-    # lesen der aktuellen Werte direkt aus der UI-Tabelle
+    # ändern der aktuellen Werte direkt aus der UI-Tabelle
     # --------------------------------------------------------------------------
     def edit_book(self, isbn):
         for row in range(self.table.rowCount()):
