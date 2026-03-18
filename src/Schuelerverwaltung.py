@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QPixmap, QBrush
 from database_manager import DatabaseManager
+from app_paths import resource_path_any
 
 
 def get_btn_style(bg_color, text_color="white"):
@@ -1050,7 +1051,9 @@ class SchuelerverwaltungWidget(QWidget):
         top_header_layout.addWidget(title_label)
 
         logo_label = QLabel()
-        pixmap = QPixmap(os.path.join(os.path.dirname(__file__), "..", "pic", "technikerschule_logo.png"))
+        logo_path = resource_path_any(os.path.join("pic", "technikerschule_logo.png"),
+                                      os.path.join("..", "pic", "technikerschule_logo.png"))
+        pixmap = QPixmap(logo_path)
         if not pixmap.isNull():
             logo_label.setPixmap(
                 pixmap.scaled(200, 80, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))

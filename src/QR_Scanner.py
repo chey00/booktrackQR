@@ -33,9 +33,10 @@ import sys
 from datetime import datetime
 from PyQt6.QtWidgets import QApplication, QWidget, QLabel, QVBoxLayout, QPushButton
 from PyQt6.QtCore import Qt
+from app_paths import user_data_path, ensure_user_data_dir
 
 # --- EINSTELLUNGEN ---
-LOG_FILE = "scan_historie.csv"
+LOG_FILE = user_data_path("scan_historie.csv")
 BRAND_GREEN = "#008781"
 
 
@@ -80,6 +81,7 @@ def speichere_scan(inhalt):
     Entwickelt von: Ahmet Topler
     Speichert erfolgreiche Scans in der CSV.
     """
+    ensure_user_data_dir()
     datei_existiert = os.path.isfile(LOG_FILE)
     with open(LOG_FILE, mode='a', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)

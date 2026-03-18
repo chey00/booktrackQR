@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont, QPixmap
+from app_paths import resource_path_any
 from loading_widgets import LoadingTableStack # Import von René, Denis & Georg
 from database_manager import DatabaseManager # Import von René, Denis & Georg
 
@@ -379,7 +380,7 @@ class BuchverwaltungWidget(QWidget):
     # Helper: Image-Pfad
     # --------------------------------------------------------------------------
     def get_image_path(self, filename):
-        return os.path.join(os.path.dirname(__file__), "..", "pic", filename)
+        return resource_path_any(os.path.join("pic", filename), os.path.join("..", "pic", filename))
 
     # --------------------------------------------------------------------------
     # Tabelle befüllen (0..3 normale Items, 4/5 Widgets)

@@ -10,12 +10,14 @@
 import pymysql
 import os
 from dotenv import load_dotenv
+from app_paths import resource_path, user_data_path
 
 
 class DatabaseManager:
     def __init__(self):
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        env_path = os.path.join(base_dir, ".env")
+        env_path = resource_path(".env")
+        if not os.path.exists(env_path):
+            env_path = user_data_path(".env")
         load_dotenv(env_path)
 
         self.host = os.getenv("DB_HOST")

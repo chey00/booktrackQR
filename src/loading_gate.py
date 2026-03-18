@@ -6,6 +6,7 @@ from PyQt6.QtCore import QObject, QThread, pyqtSignal, QTimer, Qt
 from PyQt6.QtWidgets import (
     QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QMessageBox, QProgressBar
 )
+from app_paths import resource_path, user_data_path
 
 
 class ConfigError(Exception):
@@ -99,8 +100,10 @@ class LoadingGate(QWidget):
         super().__init__()
         self.on_success = on_success
 
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        self.env_path = os.path.join(base_dir, env_filename)
+        # Prefer bundled .env; fallback to user data dir for test runs
+        self.env_path = resource_path(env_filename)
+        if not os.path.exists(self.env_path):
+            self.env_path = user_data_path(env_filename)
 
         self.setWindowTitle("Bücher App")
         self.setFixedSize(920, 720)

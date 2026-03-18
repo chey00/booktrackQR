@@ -44,6 +44,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont, QPixmap
+from app_paths import resource_path_any
 
 
 # ==============================================================================
@@ -469,7 +470,7 @@ class AusleiheWidget(QWidget):
     # Hilfsfunktion: Bildpfad für Logos / Grafiken auflösen
     # --------------------------------------------------------------------------
     def get_image_path(self, filename):
-        return os.path.join(os.path.dirname(__file__), "..", "pic", filename)
+        return resource_path_any(os.path.join("pic", filename), os.path.join("..", "pic", filename))
 
     # --------------------------------------------------------------------------
     # [Autor: Daniel Popp]
