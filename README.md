@@ -110,12 +110,12 @@ Sie muss manuell erstellt werden unter:
 
 Beispiel:
 ```
-DB_HOST=192.168.10.195
-DB_PORT=3306
-DB_NAME=booksdb
-DB_USER=booksuser
-DB_PASSWORD=Fswi-2!
-DB_CONNECT_TIMEOUT=20
+DB_HOST=xxx.xxx.xxx.xxx
+DB_PORT=xxxx
+DB_NAME=xxxxxxxx
+DB_USER=xxxxxxxx
+DB_PASSWORD=xxxxxx
+DB_CONNECT_TIMEOUT=xx
 ```
 
 Ohne `.env` startet die App nicht.  
