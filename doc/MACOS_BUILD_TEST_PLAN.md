@@ -76,9 +76,9 @@ Falls ein Spec gewünscht ist:
 Optional: Beispielinhalt für `.env` (ohne echte Zugangsdaten):
 ```
 DB_HOST=192.168.x.x
-DB_PORT=3306
-DB_NAME=booksdb
-DB_USER=booksuser
+DB_PORT=xxxx
+DB_NAME=xxxxxxxx
+DB_USER=xxxxxxxx
 DB_PASSWORD=*** 
 DB_CONNECT_TIMEOUT=20
 ```
