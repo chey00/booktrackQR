@@ -385,6 +385,68 @@ class DatabaseManager:
         except:
             return False
 
+    # --- ERGAENZUNG JACLYN BARTA (Sprint 5 Erweiterung): UNIVERSAL SCANNER SUPPORT ---
+
+    def get_student_by_qr_id(self, qr_id):
+        """
+        Sucht einen Schueler anhand der formatierten ID (z.B. MB_2024-25_015).
+        Beruecksichtigt Mustafas neue Modulo-Logik fuer die display_id.
+        """
+        # Nutzt Mustafas Logik aus get_students, um die ID (db_id % 10000) zu matchen
+        all_students = self.get_students()
+        for s in all_students:
+            # s[5] ist die berechnete formatted_id (z.B. MB_2024-25_015)
+            if s[5] == qr_id:
+                return {
+                    "db_id": s[0],
+                    "nachname": s[1],
+                    "vorname": s[2],
+                    "klasse": s[3],
+                    "jahr": s[4],
+                    "full_id": s[5]
+                }
+        return None
+
+    def get_book_by_qr_data(self, isbn):
+        """Prueft Buch-Existenz fuer den Scanner (Jaclyn Barta)"""
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cursor:
+                sql = "SELECT isbn, titel, verlag, auflage FROM BuchTitel WHERE isbn = %s"
+                cursor.execute(sql, (isbn,))
+                res = cursor.fetchone()
+                if res:
+                    return {"isbn": res[0], "titel": res[1], "verlag": res[2], "auflage": res[3]}
+                return None
+        finally:
+            conn.close()
+
+    def get_current_loaner(self, isbn):
+        """
+        PBI Erfuellung: Prueft Verfuegbarkeit und liefert Entleiher-Namen.
+        Wichtig fuer die Warnmeldung im Kamerabild bei der Ausleihe.
+        """
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cursor:
+                # Nutzt Mustafas neue Ausleihe_Aktuell Sicht
+                sql = """
+                    SELECT s.vorname, s.nachname 
+                    FROM Ausleihe_Aktuell a
+                    JOIN Studierende s ON a.studierende_id = s.studierende_id
+                    JOIN BuchExemplar e ON a.exemplar_id = e.exemplar_id
+                    JOIN BuchTitel t ON e.titel_id = t.titel_id
+                    WHERE t.isbn = %s AND s.status = 'AKTIV'
+                    LIMIT 1
+                """
+                cursor.execute(sql, (isbn,))
+                res = cursor.fetchone()
+                if res:
+                    return f"{res[0]} {res[1]}"
+                return None
+        finally:
+            conn.close()
+
     # MUSTAFA DEMIRAL (Sprint 5): Vollständige Kaskaden-Löschung des Schuljahres (inkl. Klassen, Schüler, Ausleihen) durch FK-Override.
     def delete_school_year(self, jid):
         conn = self._get_connection()
