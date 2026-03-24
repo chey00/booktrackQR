@@ -1,5 +1,6 @@
-
-• # BooktrackQR – Installation auf macOS (Team-Anleitung)
+# 24.03.26// Denis 
+———————————————————————————————————————————————————————————————————————————————————————————————————————————————
+# BooktrackQR – Installation auf macOS (Team-Anleitung)
 
   ## Zweck dieser Anleitung
 
