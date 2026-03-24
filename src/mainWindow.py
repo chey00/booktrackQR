@@ -10,7 +10,7 @@ from PyQt6.QtCore import QTimer, Qt, pyqtSignal, QObject, QThread
 
 from database_manager import DatabaseManager
 from CentralWidget import CentralWidget
-from Schuelerverwaltung import SchuelerverwaltungWidget
+from schuelerverwaltung import SchuelerverwaltungWidget
 from Rueckgabe import RueckgabeWidget
 from Buchverwaltung import BuchverwaltungWidget  # Harun Kayaci
 from Ausleihe import AusleiheWidget  # Batuhan Aktürk & Daniel Popp
