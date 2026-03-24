@@ -39,22 +39,22 @@
 
   Öffne das Terminal und führe aus:
 
-  mkdir -p ~/Library/Application\ Support/BooktrackQR
+    mkdir -p ~/Library/Application\ Support/BooktrackQR
 
   ### 2. .env Datei erstellen
 
-  nano ~/Library/Application\ Support/BooktrackQR/.env
+    nano ~/Library/Application\ Support/BooktrackQR/.env
 
   ### 3. Inhalt einfügen
 
   .env-Datei Inhalt:
 
-  DB_HOST=192.168.xx.xxx
-  DB_PORT=xxxx
-  DB_NAME=xxxxxxxx
-  DB_USER=xxxxxxxx
-  DB_PASSWORD=DEIN_PASSWORT
-  DB_CONNECT_TIMEOUT=20
+      DB_HOST=192.168.xx.xxx
+      DB_PORT=xxxx
+      DB_NAME=xxxxxxxx
+      DB_USER=xxxxxxxx
+      DB_PASSWORD=DEIN_PASSWORT
+      DB_CONNECT_TIMEOUT=20
 
   👉 Wichtig:
 
@@ -64,9 +64,9 @@
 
   ### 4. Datei speichern
 
-  CTRL + O → Enter
-
-  CTRL + X
+    CTRL + O → Enter
+  
+    CTRL + X
 
   ———
 
@@ -99,7 +99,7 @@
 
   - Prüfen, ob Datei hier liegt:
 
-  ~/Library/Application Support/BooktrackQR/.env
+    ~/Library/Application Support/BooktrackQR/.env
 
   ———
 
