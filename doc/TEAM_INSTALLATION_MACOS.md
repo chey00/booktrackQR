@@ -1,138 +1,148 @@
-# BooktrackQR – Installation auf macOS (Team-Anleitung)
 
-## Zweck dieser Anleitung
+• # BooktrackQR – Installation auf macOS (Team-Anleitung)
 
-Diese Anleitung zeigt **Schritt für Schritt**, wie die BooktrackQR-App auf einem Mac installiert und gestartet wird.
+  ## Zweck dieser Anleitung
 
-👉 Ziel:  
-Jedes Teammitglied soll die App **ohne technische Vorkenntnisse** starten können.
+  Diese Anleitung zeigt Schritt für Schritt, wie die BooktrackQR-App auf einem Mac installiert und gestartet wird.
 
----
+  👉 Ziel:
+  Jedes Teammitglied soll die App ohne technische Vorkenntnisse starten können.
 
-## Voraussetzungen
+  ———
 
-- macOS (MacBook / iMac)
-- Zugriff auf die bereitgestellte `.dmg` Datei
-- Zugangsdaten zur Datenbank (für `.env` Datei)
+  ## Voraussetzungen
 
----
+  - macOS (MacBook / iMac)
+  - Zugriff auf die bereitgestellte .dmg Datei
+  - Zugangsdaten zur Datenbank (für .env Datei)
 
-## Installation der App (.dmg)
+  ———
 
-1. `.dmg` Datei **doppelt klicken**
-2. Es öffnet sich ein Fenster mit der App
-3. Ziehe **`BooktrackQR.app`** in den Ordner **„Programme“**
+  ## Installation der App (.dmg)
 
-👉 Wichtig:  
-Die App **nicht direkt aus dem DMG starten**, sondern immer aus „Programme“.
+  1. .dmg Datei doppelt klicken
+  2. Es öffnet sich ein Fenster mit der App
+  3. Ziehe BooktrackQR.app in den Ordner „Programme“
 
----
+  👉 Wichtig:
+  Die App nicht direkt aus dem DMG starten, sondern immer aus „Programme“.
 
-## Wichtiger Schritt: `.env` Datei erstellen
+  ———
 
-Die App benötigt eine Konfigurationsdatei mit den Datenbank-Zugangsdaten.
+  ## Wichtiger Schritt: .env Datei erstellen
 
-### 1. Ordner erstellen
+  Die App benötigt eine Konfigurationsdatei mit den Datenbank-Zugangsdaten.
 
-Öffne das Terminal und führe aus:
+  ### 1. Ordner erstellen
 
-```bash
-mkdir -p ~/Library/Application\ Support/BooktrackQR
+  Öffne das Terminal und führe aus:
 
-2. .env Datei erstellen
+  mkdir -p ~/Library/Application\ Support/BooktrackQR
+
+  ### 2. .env Datei erstellen
 
   nano ~/Library/Application\ Support/BooktrackQR/.env
 
-3. Inhalt einfügen
+  ### 3. Inhalt einfügen
 
-  ( .env ) - Datei Inhalt:
+  .env-Datei Inhalt:
 
-    DB_HOST=192.168.xx.xxx
-    DB_PORT=xxxx
-    DB_NAME=xxxxxxxx
-    DB_USER=xxxxxxxx
-    DB_PASSWORD=DEIN_PASSWORT
-    DB_CONNECT_TIMEOUT=20
+  DB_HOST=192.168.xx.xxx
+  DB_PORT=xxxx
+  DB_NAME=xxxxxxxx
+  DB_USER=xxxxxxxx
+  DB_PASSWORD=DEIN_PASSWORT
+  DB_CONNECT_TIMEOUT=20
 
+  👉 Wichtig:
 
+  - Keine Leerzeichen vor oder nach =
+  - Werte exakt eintragen
+  - Passwort korrekt setzen
 
-👉 Wichtig:
-	•	Keine Leerzeichen vor oder nach =
-	•	Werte exakt eintragen
-	•	Passwort korrekt setzen
+  ### 4. Datei speichern
 
-4. Datei speichern
-	•	CTRL + O → Enter
-	•	CTRL + X
+  CTRL + O → Enter
 
-⸻
+  CTRL + X
 
-App starten
-	1.	Öffne Programme
-	2.	Starte BooktrackQR.app
+  ———
 
-⸻
+  ## App starten
 
-Erster Start unter macOS (Sicherheitswarnung)
+  1. Öffne Programme
+  2. Starte BooktrackQR.app
 
-Da die App nicht signiert ist, zeigt macOS eine Warnung.
+  ———
 
-Lösung:
-	1.	Rechtsklick auf BooktrackQR.app
-	2.	„Öffnen“ auswählen
-	3.	Bestätigen
+  ## Erster Start unter macOS (Sicherheitswarnung)
 
-⸻
+  Da die App nicht signiert ist, zeigt macOS eine Warnung.
 
-Typische Probleme & Lösungen
+  Lösung:
 
-❌ App startet nicht
+  1. Rechtsklick auf BooktrackQR.app
+  2. „Öffnen“ auswählen
+  3. Bestätigen
 
-➡️ Ursache: .env fehlt oder falsch
+  ———
 
-✔️ Lösung:
+  ## Typische Probleme & Lösungen
 
-	•	Prüfen, ob Datei hier liegt:
+  ### ❌ App startet nicht
 
-    ~/Library/Application Support/BooktrackQR/.env
+  ➡️ Ursache: .env fehlt oder falsch
 
-❌ Datenbankverbindung schlägt fehl
+  ✔️ Lösung:
 
-➡️ Ursache: falsche Zugangsdaten
+  - Prüfen, ob Datei hier liegt:
 
-✔️ Lösung:
-	•	.env prüfen (IP, Benutzer, Passwort)
+  ~/Library/Application Support/BooktrackQR/.env
 
-⸻
+  ———
 
-❌ Leeres Fenster / keine Inhalte
+  ### ❌ Datenbankverbindung schlägt fehl
 
-➡️ Ursache: Verbindung zur Datenbank fehlt
+  ➡️ Ursache: falsche Zugangsdaten
 
-✔️ Lösung:
-	•	.env prüfen
-	•	Netzwerkverbindung prüfen
+  ✔️ Lösung:
 
-⸻
+  - .env prüfen (IP, Benutzer, Passwort)
 
-❌ Sicherheitswarnung blockiert Start
+  ———
 
-✔️ Lösung:
-	•	Rechtsklick → Öffnen (siehe oben)
+  ### ❌ Leeres Fenster / keine Inhalte
 
-⸻
+  ➡️ Ursache: Verbindung zur Datenbank fehlt
 
-Wichtige Hinweise
-	•	Die .env Datei ist nicht im Projekt enthalten
-	•	Die .env Datei wird nicht automatisch erstellt
-	•	Ohne .env funktioniert die App nicht
+  ✔️ Lösung:
 
-👉 Das ist eine bewusste Sicherheitsentscheidung
+  - .env prüfen
+  - Netzwerkverbindung prüfen
 
-⸻
+  ———
 
-Support
+  ### ❌ Sicherheitswarnung blockiert Start
 
-Bei Problemen bitte melden mit:
-	•	Screenshot der Fehlermeldung
-	•	Info, bei welchem Schritt das Problem auftritt
+  ✔️ Lösung:
+
+  - Rechtsklick → Öffnen (siehe oben)
+
+  ———
+
+  ## Wichtige Hinweise
+
+  - Die .env Datei ist nicht im Projekt enthalten
+  - Die .env Datei wird nicht automatisch erstellt
+  - Ohne .env funktioniert die App nicht
+
+  👉 Das ist eine bewusste Sicherheitsentscheidung
+
+  ———
+
+  ## Support
+
+  Bei Problemen bitte melden mit:
+
+  - Screenshot der Fehlermeldung
+  - Info, bei welchem Schritt das Problem auftritt
