@@ -215,7 +215,7 @@ class AusleiheWidget(QWidget):
         self.btn_manual_book.setEnabled(False)
         book_area.addWidget(self.btn_manual_book)
 
-        self.btn_scan_book = QPushButton("QR-Code scannen")
+        self.btn_scan_book = QPushButton("Buch scannen")
         self.btn_scan_book.setStyleSheet(f"""
             QPushButton {{ background-color: {self.COLOR}; color: white; padding: 10px 15px; border-radius: 6px; font-weight: bold; font-size: 14px; }}
             QPushButton:hover {{ background-color: #75A036; }}
