@@ -1,211 +1,119 @@
 # ------------------------------------------------------------------------------
 # Projekt: BooktrackQR
-# Modul: QR_Scanner (Echtzeit-Abgleich mit MariaDB auf Raspberry Pi)
-# Datei: QR_Scanner.py
-#
-# Autoren: Ahmet Topler & Jaclyn Barta
-#
-# - Ahmet Topler: Initiale Kamera-Ansteuerung (OpenCV), Basis-Schleife,
-#                 CSV-Logging-Funktion, Grundgerüst des PyQt6-Popups.
-# - Jaclyn Barta: Netzwerk-Konfiguration (MariaDB), SQL-Join-Logik (ISBN-Abgleich),
-#                 String-Parsing (Zerlegung BOOK|ISBN|Ex), PBI-Fehlerhandling
-#                 (Unscharf-Meldung), Stabilitäts-Fixes für macOS & Hardware-Timing.
-#
-# Stand vorher (Harun Kayaci und Jaclyn Barta) :
-# - Abgleich erfolgte gegen lokale Bilddateien im Ordner "qr_pic" (Whitelist).
-# - Keine Verbindung zu einer externen Datenbank.
-# - Einfache Statusmeldung ohne Detail-Infos zur ISBN.
-#
-# Stand nachher (Angepasst durch Jaclyn Barta und Ahmet Topler):
-# - PBI Erfüllung: QR-Code Abgleich ohne lokales Bild direkt über MariaDB.
-# - Automatisches Parsing: Extrahiert ISBN aus komplexen QR-Strings.
-# - Dynamische UI: Zeigt spezifische Fehlermeldungen inkl. gescannter ISBN an.
-# - Robustes System: Erkennt unscharfe/verdeckte Codes laut User Story.
-# - macOS Fix: Stabiles Ressourcen-Management zur Vermeidung von SIGSEGV Fehlern.
+# Modul: QR_Scanner (Fix: Relative Pfade & Super Clean)
 # ------------------------------------------------------------------------------
 
 import cv2
-import mysql.connector
-import time
 import csv
 import os
-import sys
-from datetime import datetime
-from PyQt6.QtWidgets import QApplication, QWidget, QLabel, QVBoxLayout, QPushButton
-from PyQt6.QtCore import Qt
+import mysql.connector
+import openpyxl
+import re
 
-# --- EINSTELLUNGEN ---
-LOG_FILE = "scan_historie.csv"
-BRAND_GREEN = "#008781"
+# --- PFAD-FIX: Wir berechnen den Pfad relativ zur Datei ---
+# os.path.dirname(__file__) gibt uns den Pfad zum "src" Ordner.
+# Das ".." springt einen Ordner höher in das Hauptverzeichnis.
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+XLSX_PFAD = os.path.join(BASE_DIR, "schuelerlisten", "Testdaten Schüler.xlsx")
+CSV_PFAD = os.path.join(BASE_DIR, "schuelerlisten", "Testdaten Schüler.csv")
 
-
-def check_qr_in_db(scanned_code, db_config):
-    """
-    Entwickelt von: Jaclyn Barta
-    Zerlegt den QR-String (BOOK|ISBN|Exemplar) und prüft
-    über einen JOIN, ob das Exemplar in der DB existiert.
-    Gibt (Erfolg, ISBN/Fehlermeldung) zurück.
-    """
-    try:
-        teile = scanned_code.split('|')
-        if len(teile) < 2:
-            return False, "Format ungültig"
-
-        isbn_aus_qr = teile[1]
-
-        conn = mysql.connector.connect(**db_config)
-        cursor = conn.cursor()
-
-        query = """
-            SELECT e.exemplar_id 
-            FROM BuchExemplar e
-            JOIN BuchTitel t ON e.titel_id = t.titel_id
-            WHERE t.isbn = %s
-        """
-        cursor.execute(query, (isbn_aus_qr,))
-        result = cursor.fetchone()
-        conn.close()
-
-        if result:
-            return True, isbn_aus_qr
-        else:
-            return False, isbn_aus_qr
-
-    except Exception as e:
-        return False, f"DB-Fehler: {e}"
+DB_CONFIG = {
+    'host': '192.168.10.195', 'port': 3306,
+    'user': 'bookuser', 'password': '12345678', 'database': 'DB_BooktrackQR'
+}
 
 
-def speichere_scan(inhalt):
-    """
-    Entwickelt von: Ahmet Topler
-    Speichert erfolgreiche Scans in der CSV.
-    """
-    datei_existiert = os.path.isfile(LOG_FILE)
-    with open(LOG_FILE, mode='a', newline='', encoding='utf-8') as f:
-        writer = csv.writer(f)
-        if not datei_existiert:
-            writer.writerow(["Datum", "Uhrzeit", "Inhalt"])
-        jetzt = datetime.now()
-        writer.writerow([jetzt.strftime("%d.%m.%Y"), jetzt.strftime("%H:%M:%S"), inhalt])
+def super_clean(val):
+    """Entfernt ALLES außer Buchstaben, Zahlen, Bindestriche und Unterstriche."""
+    if val is None: return ""
+    s = str(val).strip().upper()
+    return re.sub(r'[^A-Z0-9\-_]', '', s)
 
 
-def zeige_pyqt_popup(app_instance, qr_daten):
-    """
-    Entwickelt von: Ahmet Topler & Jaclyn Barta
-    Zeigt Erfolgs-Popup nach einem Fund.
-    """
-    window = QWidget()
-    window.setWindowTitle("Scan Status")
-    window.setFixedSize(400, 230)
-    window.setStyleSheet("background-color: white;")
-    window.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint)
-
-    layout = QVBoxLayout()
-    label_titel = QLabel("SCAN ERFOLGREICH")
-    label_titel.setStyleSheet(f"color: {BRAND_GREEN}; font-size: 22px; font-weight: bold;")
-    label_msg = QLabel(f"Exemplar zur ISBN gefunden:\n{qr_daten}")
-    label_msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-    btn = QPushButton("OK")
-    btn.setFixedWidth(140)
-    btn.setStyleSheet(
-        f"background-color: {BRAND_GREEN}; color: white; padding: 10px 20px; font-weight: bold; border-radius: 6px;")
-    btn.clicked.connect(window.close)
-
-    layout.addWidget(label_titel, alignment=Qt.AlignmentFlag.AlignCenter)
-    layout.addWidget(label_msg, alignment=Qt.AlignmentFlag.AlignCenter)
-    layout.addWidget(btn, alignment=Qt.AlignmentFlag.AlignCenter)
-
-    window.setLayout(layout)
-    window.show()
-    app_instance.exec()
-
-
-def run_scanner(app_instance, db_config):
-    """
-    Entwickelt von: Ahmet Topler & Jaclyn Barta
-    Haupt-Loop für Kamera und Abgleich. Inklusive macOS-Ressourcen-Management.
-    """
-    cap = cv2.VideoCapture(0)
-
-    if not cap.isOpened():
-        print("❌ Kamera konnte nicht geöffnet werden.")
+def check_xlsx(scanned_id):
+    if not os.path.exists(XLSX_PFAD):
+        print(f"DEBUG: Excel Datei nicht gefunden unter {XLSX_PFAD}")
         return None
-
-    detector = cv2.QRCodeDetector()
-    gescannter_inhalt = None
-
-    print("Kamera gestartet. Suche nach QR-Codes...")
-
     try:
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                continue
+        wb = openpyxl.load_workbook(XLSX_PFAD, data_only=True)
+        sheet = wb.active
+        s_id = super_clean(scanned_id)
 
-            data, bbox, _ = detector.detectAndDecode(frame)
-            status_text = "Suche QR Code..."
-            color = (200, 200, 200)
+        # Finde Spalten
+        headers = [super_clean(cell.value).lower() for cell in sheet[1]]
+        id_col = -1
+        for i, h in enumerate(headers):
+            if "id" in h or "studierende" in h: id_col = i + 1
 
-            if data:
-                # Abgleich-Logik: Jaclyn Barta
-                success, info = check_qr_in_db(data, db_config)
-                if success:
-                    status_text = f"ERFOLG: ISBN {info} gefunden!"
-                    color = (0, 255, 0)
-                    gescannter_inhalt = data
-                    speichere_scan(data)
-                else:
-                    status_text = f"KEIN EXEMPLAR: ISBN {info} unbekannt!"
-                    color = (0, 0, 255)
-
-            elif bbox is not None and len(bbox) > 0:
-                # PBI Anforderung: Jaclyn Barta
-                status_text = "BITTE ERNEUT SCANNEN (UNSCHARF)"
-                color = (0, 165, 255)
-
-            # UI Anzeige: Ahmet Topler & Jaclyn Barta
-            cv2.putText(frame, status_text, (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-            cv2.imshow('BooktrackQR Scanner', frame)
-
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord('q') or gescannter_inhalt:
-                if gescannter_inhalt:
-                    cv2.waitKey(1000)
-                break
-    finally:
-        # SICHERHEITS-STOP: Verhindert SIGSEGV durch saubere Freigabe
-        cap.release()
-        cv2.destroyAllWindows()
-        for i in range(5):
-            cv2.waitKey(1)
-
-    return gescannter_inhalt
-
-
-if __name__ == '__main__':
-    # Verhindert mehrfache Instanzen auf macOS
-    if not QApplication.instance():
-        app = QApplication(sys.argv)
-    else:
-        app = QApplication.instance()
-
-    config = {
-        'host': '192.168.10.195',
-        'port': 3306,
-        'user': 'bookuser',
-        'password': '12345678',
-        'database': 'DB_BooktrackQR'
-    }
-
-    try:
-        test_conn = mysql.connector.connect(**config)
-        print("✅ Python-Verbindung zum Pi erfolgreich!")
-        test_conn.close()
-
-        ergebnis = run_scanner(app, config)
-        if ergebnis:
-            zeige_pyqt_popup(app, ergebnis)
-
+        if id_col != -1:
+            for row in range(2, sheet.max_row + 1):
+                raw_val = sheet.cell(row=row, column=id_col).value
+                if super_clean(raw_val) == s_id:
+                    # Namen/Infos aus der Zeile holen
+                    vn = sheet.cell(row=row, column=2).value or ""
+                    nn = sheet.cell(row=row, column=3).value or ""
+                    return f"Excel: {vn} {nn}"
     except Exception as e:
-        print(f"❌ Fehler: {e}")
+        print(f"Excel-Error: {e}")
+    return None
+
+
+def check_csv(scanned_id):
+    if not os.path.exists(CSV_PFAD):
+        print(f"DEBUG: CSV Datei nicht gefunden unter {CSV_PFAD}")
+        return None
+    s_id = super_clean(scanned_id)
+    try:
+        with open(CSV_PFAD, mode='r', encoding='utf-8-sig') as f:
+            lines = f.readlines()
+            header = lines[0]
+            sep = ";" if ";" in header else ","
+
+            reader = csv.DictReader(lines, delimiter=sep)
+            for row in reader:
+                for key, val in row.items():
+                    if super_clean(val) == s_id:
+                        vn = row.get('vorname') or row.get('Vorname') or ""
+                        nn = row.get('nachname') or row.get('Nachname') or ""
+                        return f"CSV: {vn} {nn}"
+    except Exception as e:
+        print(f"CSV-Error: {e}")
+    return None
+
+
+def run_standalone():
+    # Kurzer Check beim Start im Terminal
+    print(f"--- Suche Dateien in: {BASE_DIR} ---")
+    print(f"Excel vorhanden: {os.path.exists(XLSX_PFAD)}")
+    print(f"CSV vorhanden: {os.path.exists(CSV_PFAD)}")
+
+    cap = cv2.VideoCapture(0)
+    detector = cv2.QRCodeDetector()
+
+    while True:
+        ret, frame = cap.read()
+        if not ret: break
+        data, _, _ = detector.detectAndDecode(frame)
+
+        if data:
+            # Wir zeigen im Terminal exakt an, was die Kamera sieht
+            print(f"Gescannter Inhalt: '{data}'")
+
+            xlsx_res = check_xlsx(data)
+            csv_res = check_csv(data)
+
+            if xlsx_res or csv_res:
+                msg = xlsx_res if xlsx_res else csv_res
+                cv2.putText(frame, f"GEFUNDEN: {msg}", (20, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 3)
+            else:
+                cv2.putText(frame, f"NICHT GEFUNDEN: {data}", (20, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+
+        cv2.imshow("Scanner Test", frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'): break
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+
+if __name__ == "__main__":
+    run_standalone()
