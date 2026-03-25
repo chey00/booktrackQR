@@ -1,6 +1,7 @@
 # ------------------------------------------------------------------------------
 # Projekt: BooktrackQR
 # Modul: QR_Scanner (Fix: Relative Pfade & Super Clean)
+# Autoren: Harun Kayaci, Jaclyn Barta
 # ------------------------------------------------------------------------------
 
 import cv2
