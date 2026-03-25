@@ -4,6 +4,12 @@
 > ⚠️ Hinweis:  
 > Dies ist aktuell eine **Testversion für interne Nutzung**.
 
+## Aktuelle Version
+
+Version: V1.X
+
+Die Versionsnummer wird beim Release automatisch aktualisiert.
+
 ## Projektbeschreibung
 
 Dieses System dient der **einfachen, schnellen und fehlerfreien Verwaltung von Schulbuch-Ausleihen**.
@@ -168,3 +174,29 @@ Dies ist jedoch **nur für lokale Tests gedacht** und wird in der gebauten App n
 - Klare Nachvollziehbarkeit
 - Einfache Bedienung
 - Zentrale Datenhaltung
+
+---
+
+## Release (macOS Testversion)
+
+Neue Version erstellen mit:
+
+release
+
+oder:
+
+./scripts/release_dmg.sh
+
+Das Script:
+- prüft Git-Status
+- baut die App
+- erstellt die .dmg
+- versieht sie mit Version
+
+Voraussetzungen:
+- .venv vorhanden
+- .env vorhanden unter:
+  ~/Library/Application Support/BooktrackQR/.env
+
+Ergebnis:
+- fertige .dmg im dist/ Ordner
