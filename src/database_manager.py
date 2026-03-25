@@ -4,6 +4,7 @@
 # Autoren: René Bezold, Denis Sukkau, Georg Zinn
 # Sprint 4: Mustafa Demiral (Intelligente Get-or-Create DB Logik & ID-Handling)
 # Sprint 5: Mustafa Demiral (Soft-Delete & Admin-Löschung für Schüler)
+# Sprint 8: Datenbank-Befehle für die Ausleihe hinzugefügt
 # Zweck: Zentrale Schnittstelle zur MariaDB auf dem Raspberry Pi.
 # ------------------------------------------------------------------------------
 
@@ -171,10 +172,12 @@ class DatabaseManager:
         try:
             with conn.cursor() as cursor:
                 sql = """
-                    UPDATE BuchTitel 
-                    SET titel = %s, verlag = %s, auflage = %s 
-                    WHERE isbn = %s
-                """
+                      UPDATE BuchTitel
+                      SET titel   = %s, \
+                          verlag  = %s, \
+                          auflage = %s
+                      WHERE isbn = %s \
+                      """
                 cursor.execute(sql, (titel, verlag, auflage, isbn))
 
                 self.update_stock(isbn, bestand)
@@ -301,7 +304,8 @@ class DatabaseManager:
                     if cursor.fetchone():
                         return False
                 else:
-                    cursor.execute("SELECT MAX(studierende_id) FROM Studierende WHERE schulklasse_id = %s", (klasse_id,))
+                    cursor.execute("SELECT MAX(studierende_id) FROM Studierende WHERE schulklasse_id = %s",
+                                   (klasse_id,))
                     max_id = cursor.fetchone()[0]
                     if max_id and max_id >= (klasse_id * 10000):
                         new_id = max_id + 1
@@ -334,14 +338,19 @@ class DatabaseManager:
 
                     sql = """
                           UPDATE Studierende
-                          SET studierende_id = %s, vorname = %s, nachname = %s, schulklasse_id = %s
+                          SET studierende_id = %s, \
+                              vorname        = %s, \
+                              nachname       = %s, \
+                              schulklasse_id = %s
                           WHERE studierende_id = %s
                           """
                     cursor.execute(sql, (new_id, vorname, nachname, klasse_id, student_id))
                 else:
                     sql = """
                           UPDATE Studierende
-                          SET vorname = %s, nachname = %s, schulklasse_id = %s
+                          SET vorname        = %s, \
+                              nachname       = %s, \
+                              schulklasse_id = %s
                           WHERE studierende_id = %s
                           """
                     cursor.execute(sql, (vorname, nachname, klasse_id, student_id))
@@ -363,14 +372,18 @@ class DatabaseManager:
             with conn.cursor() as cursor:
                 cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
                 cursor.execute("""
-                    SELECT schulklasse_id FROM Schulklasse
-                    WHERE name = %s AND schuljahr_id = (SELECT schuljahr_id FROM Schuljahr WHERE jahr = %s LIMIT 1)
-                """, (klasse_name, jahr_text))
+                               SELECT schulklasse_id
+                               FROM Schulklasse
+                               WHERE name = %s
+                                 AND schuljahr_id = (SELECT schuljahr_id FROM Schuljahr WHERE jahr = %s LIMIT 1)
+                               """, (klasse_name, jahr_text))
                 res = cursor.fetchone()
                 if res:
                     kid = res[0]
                     # Löscht evtl. vorhandene Buch-Ausleihen, damit keine Leichen bleiben
-                    cursor.execute("DELETE FROM Ausleihe_Aktuell WHERE studierende_id IN (SELECT studierende_id FROM Studierende WHERE schulklasse_id = %s)", (kid,))
+                    cursor.execute(
+                        "DELETE FROM Ausleihe_Aktuell WHERE studierende_id IN (SELECT studierende_id FROM Studierende WHERE schulklasse_id = %s)",
+                        (kid,))
                     cursor.execute("DELETE FROM Studierende WHERE schulklasse_id = %s", (kid,))
                     cursor.execute("DELETE FROM Schulklasse WHERE schulklasse_id = %s", (kid,))
         finally:
@@ -429,16 +442,16 @@ class DatabaseManager:
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
-                # Nutzt Mustafas neue Ausleihe_Aktuell Sicht
+                # GEFIXT: Verknüpfung über e.isbn = t.isbn (statt titel_id)
                 sql = """
-                    SELECT s.vorname, s.nachname 
-                    FROM Ausleihe_Aktuell a
-                    JOIN Studierende s ON a.studierende_id = s.studierende_id
-                    JOIN BuchExemplar e ON a.exemplar_id = e.exemplar_id
-                    JOIN BuchTitel t ON e.titel_id = t.titel_id
-                    WHERE t.isbn = %s AND s.status = 'AKTIV'
-                    LIMIT 1
-                """
+                      SELECT s.vorname, s.nachname
+                      FROM Ausleihe_Aktuell a
+                               JOIN Studierende s ON a.studierende_id = s.studierende_id
+                               JOIN BuchExemplar e ON a.exemplar_id = e.exemplar_id
+                               JOIN BuchTitel t ON e.isbn = t.isbn
+                      WHERE t.isbn = %s \
+                        AND s.status = 'AKTIV' LIMIT 1 \
+                      """
                 cursor.execute(sql, (isbn,))
                 res = cursor.fetchone()
                 if res:
@@ -459,7 +472,9 @@ class DatabaseManager:
 
                 for k in klassen_rows:
                     kid = k[0]
-                    cursor.execute("DELETE FROM Ausleihe_Aktuell WHERE studierende_id IN (SELECT studierende_id FROM Studierende WHERE schulklasse_id = %s)", (kid,))
+                    cursor.execute(
+                        "DELETE FROM Ausleihe_Aktuell WHERE studierende_id IN (SELECT studierende_id FROM Studierende WHERE schulklasse_id = %s)",
+                        (kid,))
                     cursor.execute("DELETE FROM Studierende WHERE schulklasse_id = %s", (kid,))
 
                 cursor.execute("DELETE FROM Schulklasse WHERE schuljahr_id = %s", (jid,))
@@ -467,4 +482,76 @@ class DatabaseManager:
         finally:
             with conn.cursor() as cursor:
                 cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
+            conn.close()
+
+    # ==============================================================================
+    # NEU (SPRINT 8): Methoden für die Ausleihe
+    # ==============================================================================
+
+    def get_active_loans_for_student(self, qr_id):
+        """
+        Holt alle aktuell ausgeliehenen Bücher für einen Schüler.
+        """
+        student_info = self.get_student_by_qr_id(qr_id)
+        if not student_info:
+            return []
+
+        real_db_id = student_info["db_id"]
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cursor:
+                # GEFIXT: Verknüpfung über e.isbn = t.isbn (statt titel_id)
+                sql = """
+                      SELECT t.isbn, t.titel
+                      FROM Ausleihe_Aktuell a
+                               JOIN BuchExemplar e ON a.exemplar_id = e.exemplar_id
+                               JOIN BuchTitel t ON e.isbn = t.isbn
+                      WHERE a.studierende_id = %s \
+                      """
+                cursor.execute(sql, (real_db_id,))
+                return cursor.fetchall()
+        finally:
+            conn.close()
+
+    def add_loan(self, qr_id, isbn):
+        """
+        Verknüpft einen Schüler mit einem verfügbaren Buch-Exemplar und speichert die Ausleihe.
+        """
+        student_info = self.get_student_by_qr_id(qr_id)
+        if not student_info:
+            raise Exception("Schüler-ID konnte in der Datenbank nicht aufgelöst werden.")
+
+        real_db_id = student_info["db_id"]
+        conn = self._get_connection()
+
+        try:
+            with conn.cursor() as cursor:
+                # 1. Ein freies Exemplar dieses Buchs suchen
+                sql_find_free = """
+                                SELECT exemplar_id
+                                FROM BuchExemplar
+                                WHERE isbn = %s
+                                  AND exemplar_id NOT IN (SELECT exemplar_id FROM Ausleihe_Aktuell) LIMIT 1 \
+                                """
+                cursor.execute(sql_find_free, (isbn,))
+                result = cursor.fetchone()
+
+                if not result:
+                    raise Exception(f"Kein freies Exemplar für ISBN {isbn} mehr verfügbar!")
+
+                free_exemplar_id = result[0]
+
+                # 2. Die Ausleihe eintragen (GEFIXT: Ohne 'ausleihdatum')
+                sql_insert = """
+                             INSERT INTO Ausleihe_Aktuell (studierende_id, exemplar_id)
+                             VALUES (%s, %s) \
+                             """
+                cursor.execute(sql_insert, (real_db_id, free_exemplar_id))
+
+            conn.commit()
+            return True
+        except Exception as e:
+            conn.rollback()
+            raise e
+        finally:
             conn.close()
