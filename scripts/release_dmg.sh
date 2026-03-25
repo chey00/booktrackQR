@@ -73,7 +73,7 @@ fi
 echo "[INFO] Git Safety Check"
 
 # 1) Lokale Änderungen prüfen (dirty working tree)
-if [[ -n "$(git status --porcelain)" ]]; then
+if [[ -n "$(git status --porcelain | grep -v '^??')" ]]; then
   echo "[ERROR] Lokale Änderungen vorhanden. Bitte committen oder verwerfen."
   git status
   exit 1
