@@ -1,6 +1,6 @@
 import sys
 from PyQt6.QtWidgets import QApplication
-from MainWindow import MainWindow
+from mainWindow import MainWindow
 from loading_gate import LoadingGate
 
 def start_app():

@@ -1,87 +1,170 @@
-**Schulbibliothek – Ausleihe mit iPad, Raspberry Pi & QR-Codes**
+# UPDATE// 24.03.26 // Denis
+# BooktrackQR – Schulbibliothekssystem
 
-**Zweck des Systems**
+> ⚠️ Hinweis:  
+> Dies ist aktuell eine **Testversion für interne Nutzung**.
+
+## Projektbeschreibung
 
 Dieses System dient der **einfachen, schnellen und fehlerfreien Verwaltung von Schulbuch-Ausleihen**.
-Lehrkräfte können Bücher und Schüler verwalten, Ausleihen durchführen und Rückgaben verbuchen – **ohne Zettelwirtschaft und ohne manuelle Listen**.
 
-Die Bedienung erfolgt über ein **iPad**, die Daten werden zentral auf einem **Raspberry Pi** gespeichert. Jedes Buch wird eindeutig über einen **QR-Code** identifiziert.
+Lehrkräfte können Bücher und Schüler verwalten, Ausleihen durchführen und Rückgaben verbuchen –  
+**ohne Zettelwirtschaft und ohne manuelle Listen**.
 
-**Gesamtfunktion**
+Die Anwendung läuft als **macOS Desktop-App**.  
+Die Daten werden zentral auf einem **Raspberry Pi (Datenbankserver)** gespeichert.  
+Jedes Buch wird eindeutig über einen **QR-Code** identifiziert.
+
+---
+
+## Gesamtfunktion
 
 Das System bildet den kompletten Ausleih-Workflow ab:
 
-* Anlegen und Verwalten von **Büchern, Schülern, Klassen und Schuljahren**
-* **Zentrale Speicherung** aller Daten in einer Datenbank
-* **Ausleihe und Rückgabe per QR-Scan**, ohne Tippen
-* Klare **Validierungen und Fehlermeldungen**, um falsche Eingaben zu verhindern
+- Verwaltung von **Büchern, Schülern, Klassen und Schuljahren**
+- **Zentrale Datenhaltung** in einer Datenbank
+- **Ausleihe und Rückgabe per QR-Code**
+- Validierungen zur Vermeidung von Fehlern
 
-Ziel ist ein **robuster Alltagsbetrieb im Schulumfeld**: schnell, nachvollziehbar und wartbar.
+Ziel ist ein **robuster, schneller und nachvollziehbarer Schulbetrieb**.
 
-**Systemübersicht**
+---
 
-**Backend / Datenbank**
+## Systemübersicht
 
-* Läuft auf einem **Raspberry Pi im Schulnetz**
-* Stellt einen Datenbankdienst bereit
-* Speichert:
-  + Schüler
-  + Bücher
-  + Klassen
-  + Schuljahre
-  + Ausleihen
-* Verhindert logisch falsche Zustände (z. B. ein Buch gleichzeitig an zwei Schüler)
+### Backend / Datenbank
 
-**Datenmodell (fachlich)**
+- Läuft auf einem **Raspberry Pi im Schulnetz**
+- Stellt den Datenbankdienst bereit
+- Speichert:
+  - Schüler
+  - Bücher
+  - Klassen
+  - Schuljahre
+  - Ausleihen
 
-* **Schüler**
-  + Vorname, Nachname, Klasse, Status (aktiv/inaktiv)
-  + Liste aktuell ausgeliehener Bücher
-* **Buch**
-  + Titel, Verlag, Auflage
-  + Anzahl der vorhandenen Exemplare
-* **Ausleihe**
-  + Verknüpft Schüler ↔ Buch
-  + Stellt sicher: Ein Exemplar kann nur einmal ausgeliehen sein
-* **Klasse / Schuljahr**
-  + Strukturierung und Filterung für den Schulalltag
+---
 
-**iPad-GUI**
+### macOS App (GUI)
 
-* **Startseite mit klaren Hauptfunktionen**
-* Verwaltungsansichten für:
-  + Bücher
-  + Schüler
-  + Klassen
-  + Schuljahre
-* Suchen und Filtern nach relevanten Kriterien
-* Pflichtfelder werden erzwungen, fehlerhafte Eingaben blockiert
+- Desktop-Anwendung für macOS
+- Zentrale Steuerung aller Funktionen
+- Verwaltungsansichten für:
+  - Bücher
+  - Schüler
+  - Klassen
+  - Schuljahre
+- Such- und Filterfunktionen
+- Eingabevalidierung
 
-**QR-Code-Funktionalität**
+---
 
-* Für jedes Buch wird ein **eindeutiger QR-Code** erzeugt
-* QR-Codes werden als **Etiketten gedruckt** und auf die Bücher geklebt
-* Die iPad-Kamera scannt den Code:
-  + bei **Ausleihe**
-  + bei **Rückgabe**
-* Das System erkennt:
-  + ungültige Codes
-  + unbekannte Bücher
-  + bereits ausgeliehene Exemplare
+### QR-Code-Funktionalität
 
-**Fehlerverhalten (bewusst eingeplant)**
+- Jedes Buch erhält einen **eindeutigen QR-Code**
+- QR-Codes werden gedruckt und auf Bücher geklebt
+- Verwendung:
+  - Ausleihe
+  - Rückgabe
 
-Das System ist so ausgelegt, dass typische Fehler **klar abgefangen** werden:
+---
 
-* Fehlende Pflichtfelder → Speichern nicht möglich, verständlicher Hinweis
-* Bereits ausgeliehenes Buch → Warnung mit aktuellem Entleiher
-* Backend kurzzeitig nicht erreichbar → erneuter Ladeversuch möglich
-* Ungültiger QR-Code → erneutes Scannen ohne Folgeschäden
+## Aktueller Stand (macOS Testbuild)
 
-**Zielnutzen**
+- ✅ App wurde erfolgreich als `.app` gebaut
+- ✅ `.dmg` wurde erstellt und getestet
+- ✅ Installation über Drag & Drop möglich
+- ✅ App läuft unabhängig vom Projektordner
+- ✅ Interne Testverteilung funktioniert
 
-* **Zeitersparnis** im Schulalltag
-* **Keine doppelten Ausleihen**
-* **Nachvollziehbarkeit**, wer welches Buch hat
-* **Einfache Bedienung**, auch unter Zeitdruck
-* **Zentrale Datenhaltung** statt Excel oder Papierlisten
+---
+
+## Installation (macOS)
+
+1. `.dmg` öffnen  
+2. `BooktrackQR.app` in den Ordner **Programme** ziehen  
+3. App aus **Programme** starten  
+
+⚠️ Wichtig:  
+App **nicht direkt aus dem DMG starten**.
+
+---
+
+## Wichtige Voraussetzung: `.env`
+
+Die Anwendung benötigt eine `.env` Datei mit den Datenbank-Zugangsdaten.
+
+📍 Speicherort:
+
+~/Library/Application Support/BooktrackQR/.env
+
+Beispiel: 
+
+DB_HOST=192.168.xx.xxx
+DB_PORT=xxxx
+DB_NAME=xxxxxxx
+DB_USER=xxxxxxxx
+DB_PASSWORD=***
+DB_CONNECT_TIMEOUT=20
+
+❗ Wichtig:
+- `.env` ist **nicht im Repository enthalten**
+- `.env` ist **nicht im App-Bundle enthalten**
+- Ohne `.env` startet die App **nicht**
+
+👉 Das ist eine **bewusste Sicherheitsentscheidung**
+
+---
+
+## Erster Start unter macOS
+
+Da die App aktuell nicht signiert ist, kann eine Warnung erscheinen:
+
+👉 Lösung:
+- Rechtsklick auf die App  
+- „Öffnen“ auswählen  
+- Bestätigen  
+
+---
+
+## Aktuelle Einschränkungen
+
+- Keine Code-Signierung
+- Keine Notarization
+- `.env` muss manuell erstellt werden
+- QR-Druckfunktion ist aktuell nur Stub
+- QR-Scanner ist nachrangig
+
+---
+
+
+## Hinweis für Entwickler
+
+Im Entwicklungsmodus kann die `.env` alternativ unter folgendem Pfad liegen:
+
+  src/.env
+
+Dies ist jedoch **nur für lokale Tests gedacht** und wird in der gebauten App nicht verwendet.
+
+
+### Lokaler Start
+
+  python src/main.py
+  
+### Build
+
+  pyinstaller ....
+
+### DMG Erstellung
+
+  ./scripts/create_dmg.sh
+
+---
+
+## Ziel des Projekts
+
+- Zeitersparnis im Schulalltag
+- Vermeidung doppelter Ausleihen
+- Klare Nachvollziehbarkeit
+- Einfache Bedienung
+- Zentrale Datenhaltung

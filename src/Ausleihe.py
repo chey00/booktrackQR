@@ -44,7 +44,9 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont, QPixmap
-
+from app_paths import resource_path_any
+# [Ergaenzung Jaclyn Barta]: Import des neuen universellen Scanners
+from UniversalQRScanner import UniversalQRScanner
 
 # ==============================================================================
 # [Autor: Batuhan Aktürk]
@@ -469,7 +471,7 @@ class AusleiheWidget(QWidget):
     # Hilfsfunktion: Bildpfad für Logos / Grafiken auflösen
     # --------------------------------------------------------------------------
     def get_image_path(self, filename):
-        return os.path.join(os.path.dirname(__file__), "..", "pic", filename)
+        return resource_path_any(os.path.join("pic", filename), os.path.join("..", "pic", filename))
 
     # --------------------------------------------------------------------------
     # [Autor: Daniel Popp]
@@ -508,19 +510,26 @@ class AusleiheWidget(QWidget):
     # - Öffnet den FakeScanDialog
     # - Übergibt die ausgewählte Schüler-ID an die zentrale Verarbeitungsfunktion
     # ==============================================================================
+    # ==============================================================================
+    # [Ueberarbeitet Jaclyn Barta]: Schueler-Scan mit echtem UniversalQRScanner
+    # Zweck:
+    # - Ersetzt den FakeScanDialog von Batuhan durch echte Hardware-Ansteuerung.
+    # - Nutzt das gruene Theme der Ausleihe.
+    # ==============================================================================
     def scan_student(self):
-        items = [f"{s['id']} - {s['name']} ({s['klasse']})" for s in self.dummy_students]
-        d = FakeScanDialog(
-            self,
-            title="Schüler QR scannen (Demo)",
-            label="Schüler auswählen:",
-            items=items,
-            color=self.COLOR
+        scanner = UniversalQRScanner(
+            parent=self,
+            target_mode="STUDENT",
+            color_theme=self.COLOR,
+            context_text="Schuelerausweis scannen"
         )
 
-        if d.exec() == QDialog.DialogCode.Accepted and d.result_text:
-            sid = d.result_text.split(" - ")[0].strip()
-            self._process_student(sid)
+        # Wenn ein gueltiger Schueler-QR erkannt wurde
+        if scanner.exec() == QDialog.DialogCode.Accepted:
+            result = scanner.final_result
+            if result:
+                # Nutzt die formatierte ID (z.B. MB_2024-25_001) fuer Batuhans Workflow
+                self._process_student(result['full_id'])
 
     # ==============================================================================
     # [Autor: Batuhan Aktürk]
@@ -595,23 +604,29 @@ class AusleiheWidget(QWidget):
     # - Öffnet den FakeScanDialog für Buchdaten
     # - Übergibt die erkannte ISBN an die zentrale Buch-Verarbeitung
     # ==============================================================================
+    # ==============================================================================
+    # [Ueberarbeitet Jaclyn Barta]: Buch-Scan mit echtem UniversalQRScanner
+    # Zweck:
+    # - Integriert PBI-Anforderung: Pruefung auf bereits verliehene Buecher.
+    # - Verhindert Tipparbeit durch direkte ISBN-Uebernahme.
+    # ==============================================================================
     def scan_book(self):
         if not self.current_student:
-            self.show_message("Hinweis", "Bitte zuerst einen Schüler scannen oder eingeben.")
+            self.show_message("Hinweis", "Bitte zuerst einen Schueler scannen oder eingeben.")
             return
 
-        items = [f"{b['isbn']} - {b['titel']} ({b['verlag']}, {b['auflage']})" for b in self.dummy_books]
-        d = FakeScanDialog(
-            self,
-            title="Buch QR scannen (Demo)",
-            label="Buch auswählen:",
-            items=items,
-            color=self.COLOR
+        scanner = UniversalQRScanner(
+            parent=self,
+            target_mode="BOOK",
+            color_theme=self.COLOR,
+            context_text="Buch scannen"
         )
 
-        if d.exec() == QDialog.DialogCode.Accepted and d.result_text:
-            isbn = d.result_text.split(" - ")[0].strip()
-            self._process_book(isbn)
+        if scanner.exec() == QDialog.DialogCode.Accepted:
+            result = scanner.final_result
+            if result:
+                # Uebergibt die verifizierte ISBN an die Buchungs-Logik von Batuhan
+                self._process_book(result['isbn'])
 
     # ==============================================================================
     # [Autor: Batuhan Aktürk]

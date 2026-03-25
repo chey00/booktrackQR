@@ -3,18 +3,21 @@
 # Modul: database_manager.py
 # Autoren: René Bezold, Denis Sukkau, Georg Zinn
 # Sprint 4: Mustafa Demiral (Intelligente Get-or-Create DB Logik & ID-Handling)
+# Sprint 5: Mustafa Demiral (Soft-Delete & Admin-Löschung für Schüler)
 # Zweck: Zentrale Schnittstelle zur MariaDB auf dem Raspberry Pi.
 # ------------------------------------------------------------------------------
 
 import pymysql
 import os
 from dotenv import load_dotenv
+from app_paths import resource_path, user_data_path
 
 
 class DatabaseManager:
     def __init__(self):
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        env_path = os.path.join(base_dir, ".env")
+        env_path = resource_path(".env")
+        if not os.path.exists(env_path):
+            env_path = user_data_path(".env")
         load_dotenv(env_path)
 
         self.host = os.getenv("DB_HOST")
@@ -38,6 +41,7 @@ class DatabaseManager:
     def get_or_create_school_year(self, jahr_text):
         """Sucht das Schuljahr oder legt es automatisch an."""
         conn = self._get_connection()
+
         try:
             with conn.cursor() as cursor:
                 cursor.execute("SELECT schuljahr_id FROM Schuljahr WHERE jahr = %s", (jahr_text,))
@@ -154,6 +158,28 @@ class DatabaseManager:
                         (isbn, diff))
 
             conn.commit()
+
+        except Exception as e:
+            if conn: conn.rollback()
+            raise e
+        finally:
+            conn.close()
+
+    def update_book(self, isbn, titel, verlag, auflage, bestand):
+        """Aktualisiert die Text-Infos in BuchTitel UND passt den Bestand an."""
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cursor:
+                sql = """
+                    UPDATE BuchTitel 
+                    SET titel = %s, verlag = %s, auflage = %s 
+                    WHERE isbn = %s
+                """
+                cursor.execute(sql, (titel, verlag, auflage, isbn))
+
+                self.update_stock(isbn, bestand)
+
+            conn.commit()
         except Exception as e:
             if conn: conn.rollback()
             raise e
@@ -162,14 +188,13 @@ class DatabaseManager:
 
     # --- SCHÜLERVERWALTUNG ---
 
-    # MUSTAFA DEMIRAL: Berechnet die formatierte ID (z.B. MB_2024-25_001) dynamisch pro Klasse!
+    # MUSTAFA DEMIRAL (Sprint 5): Holt alle Schüler, berechnet formatierte ID per Modulo (schneidet Klassen-Block ab) und filtert inaktive aus.
     def get_students(self, search_text=""):
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
-                # Holt IMMER alle Schüler sortiert nach ihrer Eintragungs-Reihenfolge
                 sql = """
-                      SELECT DISTINCT studierende_id, nachname, vorname, schulklasse, schuljahr
+                      SELECT DISTINCT studierende_id, nachname, vorname, schulklasse, schuljahr, schueler_status
                       FROM v_studierende_ausleihen
                       ORDER BY studierende_id ASC \
                       """
@@ -178,24 +203,19 @@ class DatabaseManager:
         finally:
             conn.close()
 
-        class_counters = {}
         processed_students = []
 
-        # 1. Fortlaufende Nummer PRO KLASSE berechnen!
         for row in all_students:
-            db_id, nachname, vorname, klasse, jahr = row
-            key = f"{klasse}_{jahr}"
-
-            class_counters[key] = class_counters.get(key, 0) + 1
-            lfd_nr = class_counters[key]
-
+            db_id, nachname, vorname, klasse, jahr, status = row
             safe_jahr = str(jahr).replace('/', '-')
-            formatted_id = f"{klasse}_{safe_jahr}_{lfd_nr:03d}"
 
-            # Hängt die neu berechnete, perfekt formatierte ID als 6. Spalte an
-            processed_students.append((db_id, nachname, vorname, klasse, jahr, formatted_id))
+            # MUSTAFA DEMIRAL: Modulo 10000 liefert die saubere 001-Nummer (z.B. aus 30015 wird 015)
+            display_id = db_id % 10000
+            formatted_id = f"{klasse}_{safe_jahr}_{display_id:03d}"
 
-        # 2. Jetzt erst den Suchfilter anwenden (inklusive der neuen schönen ID)
+            if status == 'AKTIV':
+                processed_students.append((db_id, nachname, vorname, klasse, jahr, formatted_id))
+
         if search_text:
             filtered = []
             st = search_text.lower()
@@ -226,11 +246,30 @@ class DatabaseManager:
         finally:
             conn.close()
 
+    # MUSTAFA DEMIRAL (Sprint 5): Setzt Schüler auf 'INAKTIV' (Soft-Delete Archivierung).
+    def deactivate_student(self, student_id):
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("UPDATE Studierende SET status = 'INAKTIV' WHERE studierende_id = %s", (student_id,))
+        finally:
+            conn.close()
+
     def delete_student(self, student_id):
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
                 cursor.execute("DELETE FROM Studierende WHERE studierende_id = %s", (student_id,))
+        finally:
+            conn.close()
+
+    # MUSTAFA DEMIRAL (Sprint 5): Leert das Archiv (löscht alle inaktiven Schüler endgültig).
+    def delete_all_inactive_students(self):
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("DELETE FROM Studierende WHERE status = 'INAKTIV'")
+                return cursor.rowcount
         finally:
             conn.close()
 
@@ -250,35 +289,63 @@ class DatabaseManager:
         finally:
             conn.close()
 
-    def add_student(self, nachname, vorname, klasse, schuljahr):
+    # MUSTAFA DEMIRAL (Sprint 4/5): Mathematischer ID-Trick (Klassen-ID * 10000 + Schüler-ID) für feste, konfliktfreie IDs beim Import.
+    def add_student(self, nachname, vorname, klasse, schuljahr, manual_id=None):
         klasse_id = self.get_or_create_class(klasse, schuljahr)
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
-                cursor.execute("SELECT IFNULL(MAX(studierende_id), 0) + 1 FROM Studierende")
-                new_id = cursor.fetchone()[0]
+                if manual_id:
+                    new_id = (klasse_id * 10000) + int(manual_id)
+                    cursor.execute("SELECT studierende_id FROM Studierende WHERE studierende_id = %s", (new_id,))
+                    if cursor.fetchone():
+                        return False
+                else:
+                    cursor.execute("SELECT MAX(studierende_id) FROM Studierende WHERE schulklasse_id = %s", (klasse_id,))
+                    max_id = cursor.fetchone()[0]
+                    if max_id and max_id >= (klasse_id * 10000):
+                        new_id = max_id + 1
+                    else:
+                        new_id = (klasse_id * 10000) + 1
 
                 sql = """
                       INSERT INTO Studierende (studierende_id, vorname, nachname, status, schulklasse_id)
                       VALUES (%s, %s, %s, 'AKTIV', %s) \
                       """
                 cursor.execute(sql, (new_id, vorname, nachname, klasse_id))
+                return True
         finally:
             conn.close()
 
-    def update_student(self, student_id, nachname, vorname, klasse, schuljahr):
+    # MUSTAFA DEMIRAL (Sprint 4/5): Berechnet ID bei Änderungen neu (wichtig beim Klassenwechsel).
+    def update_student(self, student_id, nachname, vorname, klasse, schuljahr, manual_id=None):
         klasse_id = self.get_or_create_class(klasse, schuljahr)
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
-                sql = """
-                      UPDATE Studierende
-                      SET vorname        = %s, \
-                          nachname       = %s, \
-                          schulklasse_id = %s
-                      WHERE studierende_id = %s \
-                      """
-                cursor.execute(sql, (vorname, nachname, klasse_id, student_id))
+                current_manual = int(student_id) % 10000
+                new_manual = int(manual_id) if manual_id else current_manual
+                new_id = (klasse_id * 10000) + new_manual
+
+                if new_id != student_id:
+                    cursor.execute("SELECT studierende_id FROM Studierende WHERE studierende_id = %s", (new_id,))
+                    if cursor.fetchone():
+                        return False
+
+                    sql = """
+                          UPDATE Studierende
+                          SET studierende_id = %s, vorname = %s, nachname = %s, schulklasse_id = %s
+                          WHERE studierende_id = %s
+                          """
+                    cursor.execute(sql, (new_id, vorname, nachname, klasse_id, student_id))
+                else:
+                    sql = """
+                          UPDATE Studierende
+                          SET vorname = %s, nachname = %s, schulklasse_id = %s
+                          WHERE studierende_id = %s
+                          """
+                    cursor.execute(sql, (vorname, nachname, klasse_id, student_id))
+                return True
         finally:
             conn.close()
 
@@ -289,13 +356,26 @@ class DatabaseManager:
         except:
             return False
 
+    # MUSTAFA DEMIRAL (Sprint 5): Kaskaden-Löschung mit FOREIGN_KEY_CHECKS = 0, um MySQL Fehler 1451 (Constraints) restlos zu umgehen.
     def delete_class(self, klasse_name, jahr_text):
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
-                sql = "DELETE FROM Schulklasse WHERE name = %s AND schuljahr_id = (SELECT schuljahr_id FROM Schuljahr WHERE jahr = %s LIMIT 1)"
-                cursor.execute(sql, (klasse_name, jahr_text))
+                cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
+                cursor.execute("""
+                    SELECT schulklasse_id FROM Schulklasse
+                    WHERE name = %s AND schuljahr_id = (SELECT schuljahr_id FROM Schuljahr WHERE jahr = %s LIMIT 1)
+                """, (klasse_name, jahr_text))
+                res = cursor.fetchone()
+                if res:
+                    kid = res[0]
+                    # Löscht evtl. vorhandene Buch-Ausleihen, damit keine Leichen bleiben
+                    cursor.execute("DELETE FROM Ausleihe_Aktuell WHERE studierende_id IN (SELECT studierende_id FROM Studierende WHERE schulklasse_id = %s)", (kid,))
+                    cursor.execute("DELETE FROM Studierende WHERE schulklasse_id = %s", (kid,))
+                    cursor.execute("DELETE FROM Schulklasse WHERE schulklasse_id = %s", (kid,))
         finally:
+            with conn.cursor() as cursor:
+                cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
             conn.close()
 
     def add_school_year(self, jahr_text):
@@ -304,3 +384,87 @@ class DatabaseManager:
             return True
         except:
             return False
+
+    # --- ERGAENZUNG JACLYN BARTA (Sprint 5 Erweiterung): UNIVERSAL SCANNER SUPPORT ---
+
+    def get_student_by_qr_id(self, qr_id):
+        """
+        Sucht einen Schueler anhand der formatierten ID (z.B. MB_2024-25_015).
+        Beruecksichtigt Mustafas neue Modulo-Logik fuer die display_id.
+        """
+        # Nutzt Mustafas Logik aus get_students, um die ID (db_id % 10000) zu matchen
+        all_students = self.get_students()
+        for s in all_students:
+            # s[5] ist die berechnete formatted_id (z.B. MB_2024-25_015)
+            if s[5] == qr_id:
+                return {
+                    "db_id": s[0],
+                    "nachname": s[1],
+                    "vorname": s[2],
+                    "klasse": s[3],
+                    "jahr": s[4],
+                    "full_id": s[5]
+                }
+        return None
+
+    def get_book_by_qr_data(self, isbn):
+        """Prueft Buch-Existenz fuer den Scanner (Jaclyn Barta)"""
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cursor:
+                sql = "SELECT isbn, titel, verlag, auflage FROM BuchTitel WHERE isbn = %s"
+                cursor.execute(sql, (isbn,))
+                res = cursor.fetchone()
+                if res:
+                    return {"isbn": res[0], "titel": res[1], "verlag": res[2], "auflage": res[3]}
+                return None
+        finally:
+            conn.close()
+
+    def get_current_loaner(self, isbn):
+        """
+        PBI Erfuellung: Prueft Verfuegbarkeit und liefert Entleiher-Namen.
+        Wichtig fuer die Warnmeldung im Kamerabild bei der Ausleihe.
+        """
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cursor:
+                # Nutzt Mustafas neue Ausleihe_Aktuell Sicht
+                sql = """
+                    SELECT s.vorname, s.nachname 
+                    FROM Ausleihe_Aktuell a
+                    JOIN Studierende s ON a.studierende_id = s.studierende_id
+                    JOIN BuchExemplar e ON a.exemplar_id = e.exemplar_id
+                    JOIN BuchTitel t ON e.titel_id = t.titel_id
+                    WHERE t.isbn = %s AND s.status = 'AKTIV'
+                    LIMIT 1
+                """
+                cursor.execute(sql, (isbn,))
+                res = cursor.fetchone()
+                if res:
+                    return f"{res[0]} {res[1]}"
+                return None
+        finally:
+            conn.close()
+
+    # MUSTAFA DEMIRAL (Sprint 5): Vollständige Kaskaden-Löschung des Schuljahres (inkl. Klassen, Schüler, Ausleihen) durch FK-Override.
+    def delete_school_year(self, jid):
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
+
+                cursor.execute("SELECT schulklasse_id FROM Schulklasse WHERE schuljahr_id = %s", (jid,))
+                klassen_rows = cursor.fetchall()
+
+                for k in klassen_rows:
+                    kid = k[0]
+                    cursor.execute("DELETE FROM Ausleihe_Aktuell WHERE studierende_id IN (SELECT studierende_id FROM Studierende WHERE schulklasse_id = %s)", (kid,))
+                    cursor.execute("DELETE FROM Studierende WHERE schulklasse_id = %s", (kid,))
+
+                cursor.execute("DELETE FROM Schulklasse WHERE schuljahr_id = %s", (jid,))
+                cursor.execute("DELETE FROM Schuljahr WHERE schuljahr_id = %s", (jid,))
+        finally:
+            with conn.cursor() as cursor:
+                cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
+            conn.close()

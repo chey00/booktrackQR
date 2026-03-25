@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (QWidget, QPushButton, QGridLayout, QVBoxLayout,
                              QLabel, QHBoxLayout, QSizePolicy)
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QPixmap
+from app_paths import resource_path_any
 
 
 class CentralWidget(QWidget):
@@ -96,8 +97,7 @@ class CentralWidget(QWidget):
         """
         Hilfsfunktion: Findet den Pfad zum 'pic' Ordner, egal von wo man startet.
         """
-        base_dir = os.path.dirname(__file__)
-        return os.path.join(base_dir, "..", "pic", filename)
+        return resource_path_any(os.path.join("pic", filename), os.path.join("..", "pic", filename))
 
     def create_centered_button(self, text, icon_path, color):
         """
