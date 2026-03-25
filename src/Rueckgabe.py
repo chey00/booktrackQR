@@ -2,6 +2,7 @@
 # Projekt: BooktrackQR
 # Modul: RückgabeWidget (ROBUSTE CSV-SUCHE)
 # Datei: Rueckgabe.py
+# Autoren: Harun Kayaci, Batuhan Aktürk
 # ------------------------------------------------------------------------------
 
 import os
