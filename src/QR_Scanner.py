@@ -1,213 +1,131 @@
 # ------------------------------------------------------------------------------
 # Projekt: BooktrackQR
-# Modul: QR_Scanner (Echtzeit-Abgleich mit MariaDB auf Raspberry Pi)
-# Datei: QR_Scanner.py
-#
-# Autoren: Ahmet Topler & Jaclyn Barta
-#
-# - Ahmet Topler: Initiale Kamera-Ansteuerung (OpenCV), Basis-Schleife,
-#                 CSV-Logging-Funktion, Grundgerüst des PyQt6-Popups.
-# - Jaclyn Barta: Netzwerk-Konfiguration (MariaDB), SQL-Join-Logik (ISBN-Abgleich),
-#                 String-Parsing (Zerlegung BOOK|ISBN|Ex), PBI-Fehlerhandling
-#                 (Unscharf-Meldung), Stabilitäts-Fixes für macOS & Hardware-Timing.
-#
-# Stand vorher (Harun Kayaci und Jaclyn Barta) :
-# - Abgleich erfolgte gegen lokale Bilddateien im Ordner "qr_pic" (Whitelist).
-# - Keine Verbindung zu einer externen Datenbank.
-# - Einfache Statusmeldung ohne Detail-Infos zur ISBN.
-#
-# Stand nachher (Angepasst durch Jaclyn Barta und Ahmet Topler):
-# - PBI Erfüllung: QR-Code Abgleich ohne lokales Bild direkt über MariaDB.
-# - Automatisches Parsing: Extrahiert ISBN aus komplexen QR-Strings.
-# - Dynamische UI: Zeigt spezifische Fehlermeldungen inkl. gescannter ISBN an.
-# - Robustes System: Erkennt unscharfe/verdeckte Codes laut User Story.
-# - macOS Fix: Stabiles Ressourcen-Management zur Vermeidung von SIGSEGV Fehlern.
+# Modul: QR_Scanner (Fix: Relative Pfade & Super Clean)
+# Autoren: Harun Kayaci, Jaclyn Barta
 # ------------------------------------------------------------------------------
-
 import cv2
-import mysql.connector
-import time
 import csv
 import os
-import sys
-from datetime import datetime
-from PyQt6.QtWidgets import QApplication, QWidget, QLabel, QVBoxLayout, QPushButton
-from PyQt6.QtCore import Qt
-from app_paths import user_data_path, ensure_user_data_dir
+import mysql.connector
+import openpyxl
+import re
 
-# --- EINSTELLUNGEN ---
-LOG_FILE = user_data_path("scan_historie.csv")
-BRAND_GREEN = "#008781"
+# --- KONFIGURATION DER PFADE ---
+# Da die Datei im Ordner 'src' liegt, springen wir mit '..' eine Ebene höher
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+XLSX_PFAD = os.path.join(BASE_DIR, "schuelerlisten", "Testdaten Schüler.xlsx")
+CSV_PFAD = os.path.join(BASE_DIR, "schuelerlisten", "Testdaten Schüler.csv")
+
+DB_CONFIG = {
+    'host': '192.168.10.195',
+    'port': 3306,
+    'user': 'bookuser',
+    'password': '12345678',
+    'database': 'DB_BooktrackQR'
+}
 
 
-def check_qr_in_db(scanned_code, db_config):
-    """
-    Entwickelt von: Jaclyn Barta
-    Zerlegt den QR-String (BOOK|ISBN|Exemplar) und prüft
-    über einen JOIN, ob das Exemplar in der DB existiert.
-    Gibt (Erfolg, ISBN/Fehlermeldung) zurück.
-    """
+def super_clean(val):
+    """Bereinigt IDs von Leerzeichen und Sonderzeichen."""
+    if val is None: return ""
+    s = str(val).strip().upper()
+    return re.sub(r'[^A-Z0-9\-_]', '', s)
+
+
+def suche_daten(scanned_id):
+    """Sucht die ID in Excel, CSV und DB und gibt den Namen zurück."""
+    s_id = super_clean(scanned_id)
+    if not s_id: return None
+
+    # 1. EXCEL CHECK
+    if os.path.exists(XLSX_PFAD):
+        try:
+            wb = openpyxl.load_workbook(XLSX_PFAD, data_only=True)
+            ws = wb.active
+            for row in ws.iter_rows(min_row=2, values_only=True):
+                if super_clean(row[0]) == s_id:
+                    return f"{row[1]} {row[2]} (Excel)"
+        except:
+            pass
+
+    # 2. CSV CHECK
+    if os.path.exists(CSV_PFAD):
+        try:
+            with open(CSV_PFAD, mode='r', encoding='utf-8-sig') as f:
+                content = f.read(2048)
+                f.seek(0)
+                dialect = csv.Sniffer().sniff(content, delimiters=";,")
+                reader = csv.DictReader(f, dialect=dialect)
+                for row in reader:
+                    for k, v in row.items():
+                        if k and "id" in k.lower() and super_clean(v) == s_id:
+                            vn = row.get('vorname') or row.get('Vorname') or ""
+                            nn = row.get('nachname') or row.get('Nachname') or ""
+                            return f"{vn} {nn} (CSV)"
+        except:
+            pass
+
+    # 3. DB CHECK
     try:
-        teile = scanned_code.split('|')
-        if len(teile) < 2:
-            return False, "Format ungültig"
-
-        isbn_aus_qr = teile[1]
-
-        conn = mysql.connector.connect(**db_config)
+        conn = mysql.connector.connect(**DB_CONFIG)
         cursor = conn.cursor()
-
-        query = """
-            SELECT e.exemplar_id 
-            FROM BuchExemplar e
-            JOIN BuchTitel t ON e.titel_id = t.titel_id
-            WHERE t.isbn = %s
-        """
-        cursor.execute(query, (isbn_aus_qr,))
-        result = cursor.fetchone()
+        cursor.execute("SELECT vorname, nachname FROM Studierende WHERE studierende_id = %s", (scanned_id,))
+        res = cursor.fetchone()
         conn.close()
+        if res: return f"{res[0]} {res[1]} (DB)"
+    except:
+        pass
 
-        if result:
-            return True, isbn_aus_qr
-        else:
-            return False, isbn_aus_qr
-
-    except Exception as e:
-        return False, f"DB-Fehler: {e}"
+    return "NICHT GEFUNDEN"
 
 
-def speichere_scan(inhalt):
-    """
-    Entwickelt von: Ahmet Topler
-    Speichert erfolgreiche Scans in der CSV.
-    """
-    ensure_user_data_dir()
-    datei_existiert = os.path.isfile(LOG_FILE)
-    with open(LOG_FILE, mode='a', newline='', encoding='utf-8') as f:
-        writer = csv.writer(f)
-        if not datei_existiert:
-            writer.writerow(["Datum", "Uhrzeit", "Inhalt"])
-        jetzt = datetime.now()
-        writer.writerow([jetzt.strftime("%d.%m.%Y"), jetzt.strftime("%H:%M:%S"), inhalt])
-
-
-def zeige_pyqt_popup(app_instance, qr_daten):
-    """
-    Entwickelt von: Ahmet Topler & Jaclyn Barta
-    Zeigt Erfolgs-Popup nach einem Fund.
-    """
-    window = QWidget()
-    window.setWindowTitle("Scan Status")
-    window.setFixedSize(400, 230)
-    window.setStyleSheet("background-color: white;")
-    window.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint)
-
-    layout = QVBoxLayout()
-    label_titel = QLabel("SCAN ERFOLGREICH")
-    label_titel.setStyleSheet(f"color: {BRAND_GREEN}; font-size: 22px; font-weight: bold;")
-    label_msg = QLabel(f"Exemplar zur ISBN gefunden:\n{qr_daten}")
-    label_msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-    btn = QPushButton("OK")
-    btn.setFixedWidth(140)
-    btn.setStyleSheet(
-        f"background-color: {BRAND_GREEN}; color: white; padding: 10px 20px; font-weight: bold; border-radius: 6px;")
-    btn.clicked.connect(window.close)
-
-    layout.addWidget(label_titel, alignment=Qt.AlignmentFlag.AlignCenter)
-    layout.addWidget(label_msg, alignment=Qt.AlignmentFlag.AlignCenter)
-    layout.addWidget(btn, alignment=Qt.AlignmentFlag.AlignCenter)
-
-    window.setLayout(layout)
-    window.show()
-    app_instance.exec()
-
-
-def run_scanner(app_instance, db_config):
-    """
-    Entwickelt von: Ahmet Topler & Jaclyn Barta
-    Haupt-Loop für Kamera und Abgleich. Inklusive macOS-Ressourcen-Management.
-    """
+def run_scanner():
     cap = cv2.VideoCapture(0)
-
-    if not cap.isOpened():
-        print("❌ Kamera konnte nicht geöffnet werden.")
-        return None
-
     detector = cv2.QRCodeDetector()
-    gescannter_inhalt = None
 
-    print("Kamera gestartet. Suche nach QR-Codes...")
+    # Letztes Ergebnis speichern, um es dauerhaft anzuzeigen
+    display_text = "Warte auf Scan..."
+    text_color = (0, 0, 0)  # Schwarz
 
-    try:
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                continue
+    print("Scanner gestartet. Drücke 'q' zum Beenden.")
 
-            data, bbox, _ = detector.detectAndDecode(frame)
-            status_text = "Suche QR Code..."
-            color = (200, 200, 200)
+    while True:
+        ret, frame = cap.read()
+        if not ret: break
 
-            if data:
-                # Abgleich-Logik: Jaclyn Barta
-                success, info = check_qr_in_db(data, db_config)
-                if success:
-                    status_text = f"ERFOLG: ISBN {info} gefunden!"
-                    color = (0, 255, 0)
-                    gescannter_inhalt = data
-                    speichere_scan(data)
-                else:
-                    status_text = f"KEIN EXEMPLAR: ISBN {info} unbekannt!"
-                    color = (0, 0, 255)
+        # QR-Code suchen
+        data, bbox, _ = detector.detectAndDecode(frame)
 
-            elif bbox is not None and len(bbox) > 0:
-                # PBI Anforderung: Jaclyn Barta
-                status_text = "BITTE ERNEUT SCANNEN (UNSCHARF)"
-                color = (0, 165, 255)
+        if data:
+            print(f"Scan erkannt: {data}")
+            name = suche_daten(data)
+            if name and name != "NICHT GEFUNDEN":
+                display_text = f"Gefunden: {name}"
+                text_color = (0, 150, 0)  # Dunkelgrün bei Erfolg
+            else:
+                display_text = f"ID {data} unbekannt!"
+                text_color = (0, 0, 255)  # Rot bei Fehler
 
-            # UI Anzeige: Ahmet Topler & Jaclyn Barta
-            cv2.putText(frame, status_text, (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-            cv2.imshow('BooktrackQR Scanner', frame)
+        # --- TEXT OBEN RECHTS POSITIONIEREN ---
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        scale = 0.7
+        thick = 2
+        # Größe des Textes berechnen für rechtsbündige Ausrichtung
+        size = cv2.getTextSize(display_text, font, scale, thick)[0]
+        x_pos = frame.shape[1] - size[0] - 20
+        y_pos = 40
 
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord('q') or gescannter_inhalt:
-                if gescannter_inhalt:
-                    cv2.waitKey(1000)
-                break
-    finally:
-        # SICHERHEITS-STOP: Verhindert SIGSEGV durch saubere Freigabe
-        cap.release()
-        cv2.destroyAllWindows()
-        for i in range(5):
-            cv2.waitKey(1)
+        # Text zeichnen
+        cv2.putText(frame, display_text, (x_pos, y_pos), font, scale, text_color, thick)
 
-    return gescannter_inhalt
+        cv2.imshow("BooktrackQR Standalone Scanner", frame)
+
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+    cap.release()
+    cv2.destroyAllWindows()
 
 
-if __name__ == '__main__':
-    # Verhindert mehrfache Instanzen auf macOS
-    if not QApplication.instance():
-        app = QApplication(sys.argv)
-    else:
-        app = QApplication.instance()
-
-    config = {
-        'host': '192.168.10.195',
-        'port': 3306,
-        'user': 'bookuser',
-        'password': '12345678',
-        'database': 'DB_BooktrackQR'
-    }
-
-    try:
-        test_conn = mysql.connector.connect(**config)
-        print("✅ Python-Verbindung zum Pi erfolgreich!")
-        test_conn.close()
-
-        ergebnis = run_scanner(app, config)
-        if ergebnis:
-            zeige_pyqt_popup(app, ergebnis)
-
-    except Exception as e:
-        print(f"❌ Fehler: {e}")
+if __name__ == "__main__":
+    run_scanner()
