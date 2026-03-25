@@ -5,34 +5,12 @@
 #
 # Autoren: Batuhan Aktürk & Daniel Popp (Entstanden im Pair Programming)
 #
-# Aufgabenverteilung / Änderungen in dieser Version:
-#
-# - Daniel Popp:
-#   - Überarbeitung und Erweiterung des GUI-Layouts im Haupt-Widget
-#   - Anpassung der Benutzeroberfläche für manuellen Fallback
-#     (Schüler-ID / ISBN eingeben zusätzlich zum Scan)
-#   - Integration und Gestaltung der Historienanzeige
-#     ("Bereits ausgeliehene Bücher")
-#   - Anpassung der Tabellenstruktur und der Button-Bereiche
-#   - Entfernen der Bearbeiten-Funktion aus der Aktionsspalte
-#   - Pflege des einheitlichen Stylings und Darkmode-Fix für Popups
-#
-# - Batuhan Aktürk:
-#   - Erweiterung der Logik für Schüler- und Bucherfassung
-#     (Scan + manuelle Eingabe als gemeinsamer Workflow)
-#   - Einführung der zentralen Verarbeitungsfunktionen
-#     `_process_student()` und `_process_book()`
-#   - Einbau der Dummy-Historie und Fehlerfall-Simulation
-#     ("Liste konnte nicht geladen werden")
-#   - Implementierung des Buttons "Nächster Schüler (Reset)"
-#   - Anpassung der Zustandslogik für Freischalten/Sperren der UI-Elemente
-#
 # Stand (Epic 8):
 # - ECHTER Scanner (UniversalQRScanner) für Schüler und Buch integriert (Jaclyn Barta)
 # - Schüler & Buch per Scan ODER manueller Eingabe erfassen (Fallback)
-# - Anzeige der "Bereits ausgeliehenen Bücher" nach Schüler-Erfassung
-# - "Nächster Schüler" Button zum sauberen Zurücksetzen des Workflows
-# - Editieren entfernt (nur noch Löschen möglich, strenger Workflow)
+# - DATENBANK-ANBINDUNG: Dummy-Daten entfernt, Live-Abfrage aus der MariaDB
+# - Historienanzeige zieht sich "Bereits ausgeliehene Bücher" aus der DB
+# - Ausleihe speichert Buchungen live in der Datenbank
 # ------------------------------------------------------------------------------
 
 import os
@@ -44,49 +22,33 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QPixmap
 from app_paths import resource_path_any
-# [Ergaenzung Jaclyn Barta]: Import des neuen universellen Scanners
 from UniversalQRScanner import UniversalQRScanner
+from database_manager import DatabaseManager  # <--- WICHTIG: DB-Import hinzugefügt
 
 
 # ==============================================================================
-# [Autor: Daniel Popp & Batuhan Aktürk]
 # Haupt-Widget: AusleiheWidget
 # ==============================================================================
 class AusleiheWidget(QWidget):
     COLOR = "#8DBF42"
-    ALT_COLOR = "#007BFF"  # derzeit vorbereitet, aber im aktuellen Stand nicht aktiv genutzt
+    ALT_COLOR = "#007BFF"
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet("background-color: #FFFFFF;")
 
+        # --- NEU: Datenbank initialisieren ---
+        self.db = DatabaseManager()
+
         # Zustand des aktuellen Ausleihvorgangs
         self.current_student = None
         self.loan_items = []
 
-        # ----------------------------------------------------------------------
-        # DUMMY DATEN
-        # ----------------------------------------------------------------------
-        self.dummy_students = [
-            {"id": "101", "name": "Max Müller", "klasse": "10A"},
-            {"id": "102", "name": "Lisa Schmidt", "klasse": "10A"},
-            {"id": "201", "name": "Ali Yilmaz", "klasse": "11B"},
-        ]
-        self.dummy_books = [
-            {"isbn": "9783123456789", "titel": "Mathe 5", "verlag": "Cornelsen", "auflage": "2023"},
-            {"isbn": "9783120000001", "titel": "Deutsch 6", "verlag": "Klett", "auflage": "2022"},
-            {"isbn": "9783129999999", "titel": "Englisch 7", "verlag": "Klett", "auflage": "2021"},
-        ]
-
-        self.dummy_history = {
-            "101": [{"isbn": "9783129999000", "titel": "Physik 10 (Ausgeliehen am 10.10.2025)"}],
-            "102": [],
-            "201": None
-        }
+        # WICHTIG: Die Dummy-Daten wurden hier komplett entfernt!
 
         # ----------------------------------------------------------------------
-        # Layout-Erweiterung (Daniel Popp)
+        # Layout-Aufbau (Daniel Popp)
         # ----------------------------------------------------------------------
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(50, 30, 50, 50)
@@ -298,7 +260,7 @@ class AusleiheWidget(QWidget):
         main_layout.addLayout(footer_layout)
 
     # --------------------------------------------------------------------------
-    # Hilfsfunktion: Bildpfad
+    # Hilfsfunktionen
     # --------------------------------------------------------------------------
     def get_image_path(self, filename):
         return resource_path_any(os.path.join("pic", filename), os.path.join("..", "pic", filename))
@@ -317,75 +279,98 @@ class AusleiheWidget(QWidget):
         msg.exec()
 
     # ==============================================================================
-    # Schüler Logik
+    # Schüler Logik (DATENBANK INTEGRATION)
     # ==============================================================================
     def manual_student_enter(self):
         sid = self.in_student.text().strip()
         if sid:
             self._process_student(sid)
 
-    # [Ueberarbeitet Jaclyn Barta]: Schueler-Scan mit echtem UniversalQRScanner
     def scan_student(self):
         scanner = UniversalQRScanner(
             parent=self,
             target_mode="STUDENT",
             color_theme=self.COLOR,
-            context_text="Schuelerausweis scannen"
+            context_text="Schülerausweis scannen"
         )
 
         if scanner.exec() == QDialog.DialogCode.Accepted:
             result = scanner.final_result
             if result:
-                self._process_student(result['full_id'])
+                # Nutzt die formatierte ID vom Scanner
+                student_id = result.get('full_id', result.get('id', ''))
+                if student_id:
+                    self._process_student(student_id)
 
     def _process_student(self, sid):
-        s = next((x for x in self.dummy_students if x["id"] == sid), None)
-        self.current_student = s if s else {"id": sid, "name": "Unbekannt", "klasse": "—"}
+        try:
+            # 1. Schüler aus der Datenbank holen
+            student_data = self.db.get_student_by_qr_id(sid)
 
-        display = f"{self.current_student['id']} - {self.current_student['name']} ({self.current_student['klasse']})"
-        self.lbl_student_status.setText(f"✅ Schüler ausgewählt: {display}")
-        self.lbl_student_status.setStyleSheet("color: #333333; margin-left: 10px; font-weight: bold;")
+            if not student_data:
+                self.show_message("Fehler", f"Schüler mit ID '{sid}' nicht in der Datenbank gefunden!")
+                self.in_student.clear()
+                return
 
-        self.in_student.setText(display)
+            # Wir lesen die Daten aus dem Dictionary aus, das der DB-Manager zurückgibt
+            s_nachname = student_data.get('nachname', '')
+            s_vorname = student_data.get('vorname', '')
+            s_klasse = student_data.get('klasse', '')
 
-        history = self.dummy_history.get(sid, [])
-        if history is None:
-            self.show_message("Fehler", "Liste konnte nicht geladen werden.")
-            self.table_history.setRowCount(0)
-            self.lbl_history.setText(
-                f"Fehler: Historie für {self.current_student['name']} konnte nicht geladen werden."
-            )
-            self.lbl_history.setStyleSheet("color: #D32F2F; font-weight: bold; margin-left: 10px;")
-        else:
-            self.lbl_history.setText(f"Bereits ausgeliehene Bücher von {self.current_student['name']}:")
+            student_name = f"{s_vorname} {s_nachname}"
+
+            self.current_student = {
+                "id": sid,
+                "name": student_name,
+                "klasse": s_klasse,
+                "db_id": student_data.get('db_id')  # Wichtig fürs Speichern später!
+            }
+
+            display = f"{sid} - {student_name} ({s_klasse})"
+            self.lbl_student_status.setText(f"✅ Schüler ausgewählt: {display}")
+            self.lbl_student_status.setStyleSheet("color: #333333; margin-left: 10px; font-weight: bold;")
+            self.in_student.setText(display)
+
+            # 2. Historie aus der DB holen
+            try:
+                history = self.db.get_active_loans_for_student(sid)
+            except AttributeError:
+                history = []
+
+            self.lbl_history.setText(f"Bereits ausgeliehene Bücher von {student_name}:")
             self.lbl_history.setStyleSheet("color: #333333; font-weight: bold; margin-left: 10px;")
             self.table_history.setRowCount(len(history))
+
             for i, item in enumerate(history):
-                self.table_history.setItem(i, 0, QTableWidgetItem(item["isbn"]))
-                self.table_history.setItem(i, 1, QTableWidgetItem(item["titel"]))
+                isbn = str(item[0]) if isinstance(item, tuple) else item.get('isbn', '')
+                titel = str(item[1]) if isinstance(item, tuple) else item.get('titel', '')
+                self.table_history.setItem(i, 0, QTableWidgetItem(isbn))
+                self.table_history.setItem(i, 1, QTableWidgetItem(titel))
 
-        self.lbl_history.show()
-        self.table_history.show()
+            self.lbl_history.show()
+            self.table_history.show()
 
-        self.in_book.setEnabled(True)
-        self.btn_manual_book.setEnabled(True)
-        self.btn_scan_book.setEnabled(True)
-        self.btn_finish.setEnabled(True)
-        self.btn_next_student.setEnabled(True)
-        self.in_book.setFocus()
+            self.in_book.setEnabled(True)
+            self.btn_manual_book.setEnabled(True)
+            self.btn_scan_book.setEnabled(True)
+            self.btn_finish.setEnabled(True)
+            self.btn_next_student.setEnabled(True)
+            self.in_book.setFocus()
+
+        except Exception as e:
+            self.show_message("Datenbank-Fehler", f"Konnte Schüler nicht abrufen:\n{e}")
 
     # ==============================================================================
-    # Buch Logik
+    # Buch Logik (DATENBANK INTEGRATION)
     # ==============================================================================
     def manual_book_enter(self):
         isbn = self.in_book.text().strip()
         if isbn:
             self._process_book(isbn)
 
-    # [Ueberarbeitet Jaclyn Barta]: Buch-Scan mit echtem UniversalQRScanner
     def scan_book(self):
         if not self.current_student:
-            self.show_message("Hinweis", "Bitte zuerst einen Schueler scannen oder eingeben.")
+            self.show_message("Hinweis", "Bitte zuerst einen Schüler scannen oder eingeben.")
             return
 
         scanner = UniversalQRScanner(
@@ -398,36 +383,51 @@ class AusleiheWidget(QWidget):
         if scanner.exec() == QDialog.DialogCode.Accepted:
             result = scanner.final_result
             if result:
-                self._process_book(result['isbn'])
+                isbn = result.get('isbn', result.get('id', ''))
+                self._process_book(isbn)
 
     def _process_book(self, isbn):
         if not self.current_student:
             self.show_message("Hinweis", "Bitte zuerst einen Schüler auswählen.")
             return
 
-        b = next((x for x in self.dummy_books if x["isbn"] == isbn), None)
-        if not b:
-            b = {"isbn": isbn, "titel": "Unbekanntes Buch", "verlag": "—", "auflage": "—"}
+        try:
+            # 1. Ist das Buch schon in unserer aktuellen Ausleih-Liste?
+            if any(x["student_id"] == self.current_student["id"] and x["isbn"] == isbn for x in self.loan_items):
+                self.show_message("Hinweis", "Dieses Buch ist für diesen Schüler bereits in der Liste.")
+                self.in_book.clear()
+                self.in_book.setFocus()
+                return
 
-        student_display = f"{self.current_student['id']} - {self.current_student['name']} ({self.current_student['klasse']})"
+            # 2. Buch aus der Datenbank holen
+            book_data = self.db.get_book_by_qr_data(isbn)
+            if not book_data:
+                self.show_message("Fehler", f"Buch mit ISBN '{isbn}' nicht im System gefunden!")
+                self.in_book.clear()
+                self.in_book.setFocus()
+                return
 
-        if any(x["student_id"] == self.current_student["id"] and x["isbn"] == isbn for x in self.loan_items):
-            self.show_message("Hinweis", "Dieses Buch ist für diesen Schüler bereits in der Liste.")
+            b_titel = book_data.get('titel', 'Unbekannt')
+            b_verlag = book_data.get('verlag', '-')
+            b_auflage = book_data.get('auflage', '-')
+
+            student_display = f"{self.current_student['id']} - {self.current_student['name']} ({self.current_student['klasse']})"
+
+            self.loan_items.append({
+                "student_id": self.current_student["id"],
+                "student_display": student_display,
+                "isbn": isbn,
+                "titel": b_titel,
+                "verlag": b_verlag,
+                "auflage": b_auflage,
+            })
+
+            self.reload_table()
             self.in_book.clear()
             self.in_book.setFocus()
-            return
 
-        self.loan_items.append({
-            "student_id": self.current_student["id"],
-            "student_display": student_display,
-            "isbn": b["isbn"],
-            "titel": b["titel"],
-            "verlag": b["verlag"],
-            "auflage": b["auflage"],
-        })
-        self.reload_table()
-        self.in_book.clear()
-        self.in_book.setFocus()
+        except Exception as e:
+            self.show_message("Datenbank-Fehler", f"Konnte Buch nicht prüfen:\n{e}")
 
     # ==============================================================================
     # Tabellen & Reset Logik
@@ -505,13 +505,30 @@ class AusleiheWidget(QWidget):
         self.reload_table()
         self.in_student.setFocus()
 
+    # ==============================================================================
+    # DATENBANK: Ausleihe endgültig speichern
+    # ==============================================================================
     def finish_loan(self):
         if not self.loan_items:
             self.show_message("Hinweis", "Keine Ausleihe-Einträge vorhanden.")
             return
 
-        self.show_message(
-            "Ausleihe abgeschlossen",
-            f"Ausleihe gespeichert!\n\nEinträge gesamt: {len(self.loan_items)}"
-        )
-        self.reset_all()
+        try:
+            erfolgreich = 0
+            for item in self.loan_items:
+                # Holt sich die echte formatierte ID (z.B. MB_2024-25_015)
+                qr_id = item["student_id"]
+                isbn = item["isbn"]
+
+                # Ruft die neue Funktion in der Datenbank auf
+                self.db.add_loan(qr_id, isbn)
+                erfolgreich += 1
+
+            self.show_message(
+                "Ausleihe abgeschlossen",
+                f"Ausleihe erfolgreich gespeichert!\n\nVerbuchte Bücher: {erfolgreich}"
+            )
+            self.reset_all()
+
+        except Exception as e:
+            self.show_message("Datenbank-Fehler", f"Fehler beim Speichern der Ausleihe:\n{e}")
