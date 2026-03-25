@@ -2,6 +2,7 @@
 # Projekt: BooktrackQR
 # Modul: UniversalQRScanner.py
 # Autorin: Jaclyn Barta (Maerz 2026)
+
 # Zweck: Universelle Kamera-Validierung ohne Umlaut-Probleme (OpenCV Hershey Fonts)
 # ------------------------------------------------------------------------------
 

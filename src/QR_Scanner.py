@@ -3,7 +3,6 @@
 # Modul: QR_Scanner (Fix: Relative Pfade & Super Clean)
 # Autoren: Harun Kayaci, Jaclyn Barta
 # ------------------------------------------------------------------------------
-
 import cv2
 import csv
 import os
@@ -11,110 +10,122 @@ import mysql.connector
 import openpyxl
 import re
 
-# --- PFAD-FIX: Wir berechnen den Pfad relativ zur Datei ---
-# os.path.dirname(__file__) gibt uns den Pfad zum "src" Ordner.
-# Das ".." springt einen Ordner höher in das Hauptverzeichnis.
+# --- KONFIGURATION DER PFADE ---
+# Da die Datei im Ordner 'src' liegt, springen wir mit '..' eine Ebene höher
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 XLSX_PFAD = os.path.join(BASE_DIR, "schuelerlisten", "Testdaten Schüler.xlsx")
 CSV_PFAD = os.path.join(BASE_DIR, "schuelerlisten", "Testdaten Schüler.csv")
 
 DB_CONFIG = {
-    'host': '192.168.10.195', 'port': 3306,
-    'user': 'bookuser', 'password': '12345678', 'database': 'DB_BooktrackQR'
+    'host': '192.168.10.195',
+    'port': 3306,
+    'user': 'bookuser',
+    'password': '12345678',
+    'database': 'DB_BooktrackQR'
 }
 
 
 def super_clean(val):
-    """Entfernt ALLES außer Buchstaben, Zahlen, Bindestriche und Unterstriche."""
+    """Bereinigt IDs von Leerzeichen und Sonderzeichen."""
     if val is None: return ""
     s = str(val).strip().upper()
     return re.sub(r'[^A-Z0-9\-_]', '', s)
 
 
-def check_xlsx(scanned_id):
-    if not os.path.exists(XLSX_PFAD):
-        print(f"DEBUG: Excel Datei nicht gefunden unter {XLSX_PFAD}")
-        return None
-    try:
-        wb = openpyxl.load_workbook(XLSX_PFAD, data_only=True)
-        sheet = wb.active
-        s_id = super_clean(scanned_id)
-
-        # Finde Spalten
-        headers = [super_clean(cell.value).lower() for cell in sheet[1]]
-        id_col = -1
-        for i, h in enumerate(headers):
-            if "id" in h or "studierende" in h: id_col = i + 1
-
-        if id_col != -1:
-            for row in range(2, sheet.max_row + 1):
-                raw_val = sheet.cell(row=row, column=id_col).value
-                if super_clean(raw_val) == s_id:
-                    # Namen/Infos aus der Zeile holen
-                    vn = sheet.cell(row=row, column=2).value or ""
-                    nn = sheet.cell(row=row, column=3).value or ""
-                    return f"Excel: {vn} {nn}"
-    except Exception as e:
-        print(f"Excel-Error: {e}")
-    return None
-
-
-def check_csv(scanned_id):
-    if not os.path.exists(CSV_PFAD):
-        print(f"DEBUG: CSV Datei nicht gefunden unter {CSV_PFAD}")
-        return None
+def suche_daten(scanned_id):
+    """Sucht die ID in Excel, CSV und DB und gibt den Namen zurück."""
     s_id = super_clean(scanned_id)
+    if not s_id: return None
+
+    # 1. EXCEL CHECK
+    if os.path.exists(XLSX_PFAD):
+        try:
+            wb = openpyxl.load_workbook(XLSX_PFAD, data_only=True)
+            ws = wb.active
+            for row in ws.iter_rows(min_row=2, values_only=True):
+                if super_clean(row[0]) == s_id:
+                    return f"{row[1]} {row[2]} (Excel)"
+        except:
+            pass
+
+    # 2. CSV CHECK
+    if os.path.exists(CSV_PFAD):
+        try:
+            with open(CSV_PFAD, mode='r', encoding='utf-8-sig') as f:
+                content = f.read(2048)
+                f.seek(0)
+                dialect = csv.Sniffer().sniff(content, delimiters=";,")
+                reader = csv.DictReader(f, dialect=dialect)
+                for row in reader:
+                    for k, v in row.items():
+                        if k and "id" in k.lower() and super_clean(v) == s_id:
+                            vn = row.get('vorname') or row.get('Vorname') or ""
+                            nn = row.get('nachname') or row.get('Nachname') or ""
+                            return f"{vn} {nn} (CSV)"
+        except:
+            pass
+
+    # 3. DB CHECK
     try:
-        with open(CSV_PFAD, mode='r', encoding='utf-8-sig') as f:
-            lines = f.readlines()
-            header = lines[0]
-            sep = ";" if ";" in header else ","
+        conn = mysql.connector.connect(**DB_CONFIG)
+        cursor = conn.cursor()
+        cursor.execute("SELECT vorname, nachname FROM Studierende WHERE studierende_id = %s", (scanned_id,))
+        res = cursor.fetchone()
+        conn.close()
+        if res: return f"{res[0]} {res[1]} (DB)"
+    except:
+        pass
 
-            reader = csv.DictReader(lines, delimiter=sep)
-            for row in reader:
-                for key, val in row.items():
-                    if super_clean(val) == s_id:
-                        vn = row.get('vorname') or row.get('Vorname') or ""
-                        nn = row.get('nachname') or row.get('Nachname') or ""
-                        return f"CSV: {vn} {nn}"
-    except Exception as e:
-        print(f"CSV-Error: {e}")
-    return None
+    return "NICHT GEFUNDEN"
 
 
-def run_standalone():
-    # Kurzer Check beim Start im Terminal
-    print(f"--- Suche Dateien in: {BASE_DIR} ---")
-    print(f"Excel vorhanden: {os.path.exists(XLSX_PFAD)}")
-    print(f"CSV vorhanden: {os.path.exists(CSV_PFAD)}")
-
+def run_scanner():
     cap = cv2.VideoCapture(0)
     detector = cv2.QRCodeDetector()
+
+    # Letztes Ergebnis speichern, um es dauerhaft anzuzeigen
+    display_text = "Warte auf Scan..."
+    text_color = (0, 0, 0)  # Schwarz
+
+    print("Scanner gestartet. Drücke 'q' zum Beenden.")
 
     while True:
         ret, frame = cap.read()
         if not ret: break
-        data, _, _ = detector.detectAndDecode(frame)
+
+        # QR-Code suchen
+        data, bbox, _ = detector.detectAndDecode(frame)
 
         if data:
-            # Wir zeigen im Terminal exakt an, was die Kamera sieht
-            print(f"Gescannter Inhalt: '{data}'")
-
-            xlsx_res = check_xlsx(data)
-            csv_res = check_csv(data)
-
-            if xlsx_res or csv_res:
-                msg = xlsx_res if xlsx_res else csv_res
-                cv2.putText(frame, f"GEFUNDEN: {msg}", (20, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 3)
+            print(f"Scan erkannt: {data}")
+            name = suche_daten(data)
+            if name and name != "NICHT GEFUNDEN":
+                display_text = f"Gefunden: {name}"
+                text_color = (0, 150, 0)  # Dunkelgrün bei Erfolg
             else:
-                cv2.putText(frame, f"NICHT GEFUNDEN: {data}", (20, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                display_text = f"ID {data} unbekannt!"
+                text_color = (0, 0, 255)  # Rot bei Fehler
 
-        cv2.imshow("Scanner Test", frame)
-        if cv2.waitKey(1) & 0xFF == ord('q'): break
+        # --- TEXT OBEN RECHTS POSITIONIEREN ---
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        scale = 0.7
+        thick = 2
+        # Größe des Textes berechnen für rechtsbündige Ausrichtung
+        size = cv2.getTextSize(display_text, font, scale, thick)[0]
+        x_pos = frame.shape[1] - size[0] - 20
+        y_pos = 40
+
+        # Text zeichnen
+        cv2.putText(frame, display_text, (x_pos, y_pos), font, scale, text_color, thick)
+
+        cv2.imshow("BooktrackQR Standalone Scanner", frame)
+
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
 
     cap.release()
     cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":
-    run_standalone()
+    run_scanner()

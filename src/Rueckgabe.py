@@ -1,24 +1,21 @@
 # ------------------------------------------------------------------------------
 # Projekt: BooktrackQR
-# Modul: RückgabeWidget (ROBUSTE CSV-SUCHE)
+# Modul: RückgabeWidget (UniversalScanner Integration)
 # Datei: Rueckgabe.py
-# Autoren: Harun Kayaci, Batuhan Aktürk
 # ------------------------------------------------------------------------------
 
 import os
-import cv2
-import csv
 import mysql.connector
 from PyQt6.QtWidgets import (
     QWidget, QPushButton, QVBoxLayout, QLabel, QHBoxLayout,
     QTableWidget, QTableWidgetItem, QHeaderView, QLineEdit,
-    QMessageBox
+    QMessageBox, QDialog
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
-# Pfad zu deiner Schülerliste
-CSV_PFAD = "schuelerlisten/Testdaten Schüler.csv"
+# [Ergaenzung]: Import des universellen Scanners
+from UniversalQRScanner import UniversalQRScanner
 
 
 class RueckgabeWidget(QWidget):
@@ -58,16 +55,16 @@ class RueckgabeWidget(QWidget):
         # Scan Bereich
         scan_area = QHBoxLayout()
         self.in_student = QLineEdit()
-        self.in_student.setPlaceholderText("Bitte Schülerausweis scannen (CSV/DB)...")
+        self.in_student.setPlaceholderText("Bitte Schuelerausweis scannen...")
         self.in_student.setReadOnly(True)
         self.in_student.setStyleSheet(
             "padding: 12px; border: 2px solid #000000; border-radius: 6px; "
             "background: #F9F9F9; color: #000000; font-size: 14px; font-weight: bold;")
 
-        self.btn_scan_student = QPushButton("📷 Schüler scannen")
+        self.btn_scan_student = QPushButton("📷 Schueler scannen")
         self.btn_scan_student.setStyleSheet(
             f"background-color: {self.COLOR_RED}; color: white; padding: 12px 20px; font-weight: bold; border-radius: 6px;")
-        self.btn_scan_student.clicked.connect(self.scan_student_with_camera)
+        self.btn_scan_student.clicked.connect(self.scan_student)
 
         scan_area.addWidget(self.in_student)
         scan_area.addWidget(self.btn_scan_student)
@@ -90,16 +87,16 @@ class RueckgabeWidget(QWidget):
 
         # Aktionen
         actions_layout = QHBoxLayout()
-        self.btn_next_student = QPushButton("Nächster Schüler / Reset")
+        self.btn_next_student = QPushButton("Nächster Schueler / Reset")
         self.btn_next_student.setStyleSheet(
             "background-color: #CCCCCC; color: #000000; font-weight: bold; padding: 10px; border: 1px solid #000000;")
         self.btn_next_student.clicked.connect(self.reset_view)
 
-        self.btn_scan_book = QPushButton("📷 Buch scannen (Rückgabe)")
+        self.btn_scan_book = QPushButton("📷 Buch scannen (Rueckgabe)")
         self.btn_scan_book.setEnabled(False)
         self.btn_scan_book.setStyleSheet(
             f"background-color: {self.COLOR_RED}; color: white; padding: 12px 25px; font-weight: bold; border-radius: 6px;")
-        self.btn_scan_book.clicked.connect(self.scan_book_return_with_camera)
+        self.btn_scan_book.clicked.connect(self.scan_book)
 
         actions_layout.addWidget(self.btn_next_student)
         actions_layout.addStretch()
@@ -124,75 +121,46 @@ class RueckgabeWidget(QWidget):
             "QLabel { color: #000000; font-weight: bold; font-size: 14px; } QPushButton { color: #000000; font-weight: bold; }")
         msg.exec()
 
-    # --- VERBESSERTE CSV LOGIK ---
-    def suche_schueler_in_csv(self, scanned_id):
-        if not os.path.exists(CSV_PFAD):
-            return None
+    # --- SCAN LOGIK MIT UNIVERSAL SCANNER ---
 
-        try:
-            # Wir versuchen es erst mit Semikolon (Standard Excel-DE)
-            with open(CSV_PFAD, mode='r', encoding='utf-8-sig') as f:
-                # Automatisches Erkennen des Trennzeichens
-                content = f.read(2048)
-                f.seek(0)
-                dialect = csv.Sniffer().sniff(content, delimiters=";,")
-                reader = csv.DictReader(f, dialect=dialect)
+    def scan_student(self):
+        """[Analog zur Ausleihe]: Startet den UniversalQRScanner für Schüler."""
+        scanner = UniversalQRScanner(
+            parent=self,
+            target_mode="STUDENT",
+            color_theme=self.COLOR_RED,
+            context_text="Schuelerausweis scannen"
+        )
 
-                for row in reader:
-                    # Wir strippen Leerzeichen und vergleichen Case-Insensitive
-                    for key, value in row.items():
-                        if key and ("id" in key.lower() or "studierende" in key.lower()):
-                            if str(value).strip().lower() == str(scanned_id).strip().lower():
-                                vorname = row.get('vorname', '') or row.get('Vorname', '')
-                                nachname = row.get('nachname', '') or row.get('Nachname', '')
-                                return f"{vorname} {nachname}".strip()
-        except Exception as e:
-            print(f"CSV-Fehler: {e}")
-            return None
-        return None
-
-    def scan_student_with_camera(self):
-        scanned_id = self._get_qr_from_camera("Schueler scannen (CSV/DB)...")
-        if scanned_id:
-            name = self.suche_schueler_in_csv(scanned_id)
-
-            if not name:
-                try:
-                    conn = mysql.connector.connect(**self.db_config)
-                    cursor = conn.cursor(dictionary=True)
-                    cursor.execute("SELECT vorname, nachname FROM Studierende WHERE studierende_id = %s", (scanned_id,))
-                    res = cursor.fetchone()
-                    conn.close()
-                    if res: name = f"{res['vorname']} {res['nachname']}"
-                except:
-                    pass
-
-            if name:
-                self.in_student.setText(f"{scanned_id} - {name}")
-                self.current_student_id = scanned_id
+        if scanner.exec() == QDialog.DialogCode.Accepted:
+            result = scanner.final_result
+            if result:
+                display = f"{result['vorname']} {result['nachname']}"
+                self.in_student.setText(display)
+                self.current_student_id = result['db_id']
                 self.load_loans_from_db()
-            else:
-                self.zeige_nachricht("Nicht gefunden",
-                                     f"ID {scanned_id} wurde weder in der CSV noch in der DB gefunden.",
-                                     QMessageBox.Icon.Warning)
 
-    def _get_qr_from_camera(self, instruction_text):
-        cap = cv2.VideoCapture(0)
-        detector = cv2.QRCodeDetector()
-        result = None
-        while True:
-            ret, frame = cap.read()
-            if not ret: break
-            cv2.putText(frame, instruction_text, (20, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
-            data, bbox, _ = detector.detectAndDecode(frame)
-            if data:
-                result = data
-                break
-            cv2.imshow("Scanner", frame)
-            if cv2.waitKey(1) & 0xFF == ord('q'): break
-        cap.release()
-        cv2.destroyAllWindows()
-        return result
+    def scan_book(self):
+        """[Analog zur Ausleihe]: Startet den UniversalQRScanner für Bücher."""
+        scanner = UniversalQRScanner(
+            parent=self,
+            target_mode="BOOK",
+            color_theme=self.COLOR_RED,
+            context_text="Buch zur Rückgabe scannen"
+        )
+
+        if scanner.exec() == QDialog.DialogCode.Accepted:
+            result = scanner.final_result
+            if result:
+                # Suche das Buch in der aktuellen Tabellenliste
+                qr_code_to_find = f"QR-{result['isbn']}-{result['exemplar_nr']}"
+                for row in range(self.table.rowCount()):
+                    if self.table.item(row, 2).text() == qr_code_to_find:
+                        self.process_return_in_db(qr_code_to_find, row)
+                        return
+
+                self.zeige_nachricht("Fehler", "Dieses Buch ist nicht in der Ausleihliste des Schülers!",
+                                     QMessageBox.Icon.Warning)
 
     def load_loans_from_db(self):
         try:
@@ -202,6 +170,7 @@ class RueckgabeWidget(QWidget):
             cursor.execute(query, (self.current_student_id,))
             books = cursor.fetchall()
             conn.close()
+
             self.table.setRowCount(len(books))
             for row, book in enumerate(books):
                 cols = [str(book['isbn']), str(book['titel']), str(book['qr_code']), "Ausgeliehen"]
@@ -209,34 +178,33 @@ class RueckgabeWidget(QWidget):
                     item = QTableWidgetItem(text)
                     item.setForeground(Qt.GlobalColor.black)
                     self.table.setItem(row, col_idx, item)
-            self.btn_scan_book.setEnabled(True)
-        except:
-            pass
 
-    def scan_book_return_with_camera(self):
-        scanned_code = self._get_qr_from_camera("Buch scannen...")
-        if scanned_code:
-            clean_code = scanned_code.split('|')[-1] if '|' in scanned_code else scanned_code
-            for row in range(self.table.rowCount()):
-                if self.table.item(row, 2).text() == clean_code:
-                    self.process_return_in_db(clean_code, row)
-                    return
-            self.zeige_nachricht("Fehler", "Buch gehört nicht zu diesem Schüler!", QMessageBox.Icon.Warning)
+            self.btn_scan_book.setEnabled(True)
+        except Exception as e:
+            self.zeige_nachricht("Fehler", f"Fehler beim Laden: {e}", QMessageBox.Icon.Critical)
 
     def process_return_in_db(self, qr_code, table_row):
         try:
             conn = mysql.connector.connect(**self.db_config)
             cursor = conn.cursor()
+            # Löschen aus der aktuellen Ausleihe
             sql = "DELETE FROM Ausleihe_Aktuell WHERE exemplar_id = (SELECT exemplar_id FROM BuchExemplar WHERE qr_code = %s)"
             cursor.execute(sql, (qr_code,))
             conn.commit()
             conn.close()
-            self.table.setItem(table_row, 3, QTableWidgetItem("✅ Zurück"))
-            self.zeige_nachricht("Erfolg", f"Buch {qr_code} zurückgegeben.")
-        except:
-            pass
+
+            # Tabelleneintrag aktualisieren
+            status_item = QTableWidgetItem("✅ Zurueck")
+            status_item.setForeground(Qt.GlobalColor.darkGreen)
+            status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.table.setItem(table_row, 3, status_item)
+
+            self.zeige_nachricht("Erfolg", f"Buch {qr_code} wurde erfolgreich zurückgegeben.")
+        except Exception as e:
+            self.zeige_nachricht("DB-Fehler", str(e), QMessageBox.Icon.Critical)
 
     def reset_view(self):
         self.in_student.clear()
         self.table.setRowCount(0)
         self.btn_scan_book.setEnabled(False)
+        self.current_student_id = None
