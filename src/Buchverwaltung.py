@@ -3,21 +3,24 @@
 # Modul: BuchverwaltungWidget (GUI Design & Logik)
 # Autoren:
 # - Harun: Dialoge (DeleteConfirmDialog, BookDialog) + Validierung
+# - Mustafa & Ahmet: ISBN Scanner Integration (Kamera) & API-Autofill im BookDialog
 # - Batuhan: BuchverwaltungWidget (Layout, Tabelle, Sortierung, Bestand +/- , Aktionen)
 # - René + Georg + Denis: Integration Lade-Indikator & Fehlerbehandlung (User Story Resilienz)
 # ------------------------------------------------------------------------------
 
 import os
+import requests  # Import für die Google Books API (Mustafa & Ahmet)
 from PyQt6.QtWidgets import (
     QWidget, QPushButton, QVBoxLayout, QLabel, QHBoxLayout,
     QTableWidget, QTableWidgetItem, QHeaderView, QLineEdit,
-    QDialog, QFormLayout, QComboBox
+    QDialog, QFormLayout, QComboBox, QApplication  # <-- QApplication hier hinzugefügt
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont, QPixmap
 from app_paths import resource_path_any
-from loading_widgets import LoadingTableStack # Import von René, Denis & Georg
-from database_manager import DatabaseManager # Import von René, Denis & Georg
+from loading_widgets import LoadingTableStack  # Import von René, Denis & Georg
+from database_manager import DatabaseManager  # Import von René, Denis & Georg
+from ISBN_Scanner import scan_and_return_isbn  # Import Mustafa & Ahmet
 
 
 # ==============================================================================
@@ -73,10 +76,8 @@ class DeleteConfirmDialog(QDialog):
 
 
 # ==============================================================================
-# Harun: BookDialog
+# Harun, Mustafa & Ahmet: BookDialog (Integriert mit Barcode-Scanner & Auto-Fill)
 # Zweck: Dialog zum "Buch hinzufügen" und "Buch bearbeiten"
-# - Bei Bearbeiten ist ISBN read-only (damit Schlüssel nicht geändert wird).
-# - validate_and_save() prüft Pflichtfelder + Bestand muss Zahl sein.
 # ==============================================================================
 class BookDialog(QDialog):
     def __init__(self, parent=None, book_data=None):
@@ -85,7 +86,6 @@ class BookDialog(QDialog):
         self.setWindowTitle("Neues Buch" if not book_data else "Buch bearbeiten")
         self.setFixedSize(420, 340)
 
-        # Grund-Stylesheet für Dialog + Eingabefelder
         self.setStyleSheet("""
             QDialog { background-color: #FFFFFF; }
             QLabel { color: #333333; font-weight: bold; }
@@ -101,14 +101,28 @@ class BookDialog(QDialog):
         """)
 
         layout = QVBoxLayout(self)
-
-        # FormLayout -> Label links, Eingabefeld rechts
         form_layout = QFormLayout()
         form_layout.setSpacing(15)
 
-        # Eingabefelder
+        # --- ISBN Feld + Kamera Button (Mustafa & Ahmet) ---
+        isbn_layout = QHBoxLayout()
+        isbn_layout.setContentsMargins(0, 0, 0, 0)
+
         self.input_isbn = QLineEdit()
         self.input_isbn.setPlaceholderText("ISBN eingeben")
+
+        self.btn_scan = QPushButton("📷")
+        self.btn_scan.setFixedSize(32, 32)
+        self.btn_scan.setStyleSheet("""
+            QPushButton { background-color: #E0E0E0; border: 1px solid #CCCCCC; border-radius: 4px; font-size: 16px; }
+            QPushButton:hover { background-color: #5CB1D6; color: white; border: 1px solid #5CB1D6; }
+        """)
+        self.btn_scan.setToolTip("ISBN scannen & Daten automatisch ausfüllen")
+        self.btn_scan.clicked.connect(self.trigger_camera_scan)
+
+        isbn_layout.addWidget(self.input_isbn)
+        isbn_layout.addWidget(self.btn_scan)
+        # ----------------------------------------------------
 
         self.input_title = QLineEdit()
         self.input_title.setPlaceholderText("Titel eingeben")
@@ -122,24 +136,24 @@ class BookDialog(QDialog):
         self.input_stock = QLineEdit()
         self.input_stock.setPlaceholderText("Bestand (Zahl)")
 
-        # Fehlermeldung (standardmäßig versteckt)
         self.error_label = QLabel("Bitte alle markierten Pflichtfelder (*) ausfüllen.")
         self.error_label.setStyleSheet("color: #D32F2F; font-size: 12px; font-style: italic; font-weight: normal;")
         self.error_label.hide()
 
-        # Bearbeitungsmodus: bestehende Daten in Felder laden
         if book_data:
-            # book_data: (isbn, titel, verlag, auflage, bestand)
             self.input_isbn.setText(book_data[0])
-            self.input_isbn.setReadOnly(True)  # ISBN bleibt fix
+            self.input_isbn.setReadOnly(True)
             self.input_isbn.setStyleSheet("background:#F3F3F3;")
+
+            self.btn_scan.setEnabled(False)
+            self.btn_scan.setStyleSheet("background-color: #F3F3F3; color: #CCCCCC; border: 1px solid #CCCCCC;")
+
             self.input_title.setText(book_data[1])
             self.input_publisher.setText(book_data[2])
             self.input_edition.setText(book_data[3])
             self.input_stock.setText(str(book_data[4]))
 
-        # Pflichtfelder mit * markiert
-        form_layout.addRow(QLabel("ISBN*:"), self.input_isbn)
+        form_layout.addRow(QLabel("ISBN*:"), isbn_layout)
         form_layout.addRow(QLabel("Titel*:"), self.input_title)
         form_layout.addRow(QLabel("Verlag*:"), self.input_publisher)
         form_layout.addRow(QLabel("Auflage*:"), self.input_edition)
@@ -149,24 +163,19 @@ class BookDialog(QDialog):
         layout.addWidget(self.error_label)
         layout.addStretch()
 
-        # Aktionsbuttons: Abbrechen / Speichern
         btn_layout = QHBoxLayout()
         self.btn_cancel = QPushButton("Abbrechen")
         self.btn_save = QPushButton("Speichern")
 
-        # Button-Styles (Grau / Blau)
         self.btn_cancel.setStyleSheet("""
             QPushButton { background-color: #E0E0E0; color: #333333; padding: 7px 17px; border: 3px solid #E0E0E0; border-radius: 4px; font-weight: bold; }
             QPushButton:hover { border: 3px solid #333333; }
-            QPushButton:pressed { background-color: #444444; border: 3px solid #444444; color: white; }
         """)
         self.btn_save.setStyleSheet("""
             QPushButton { background-color: #5CB1D6; color: white; padding: 7px 17px; border: 3px solid #5CB1D6; border-radius: 4px; font-weight: bold; }
             QPushButton:hover { border: 3px solid #333333; }
-            QPushButton:pressed { background-color: #444444; border: 3px solid #444444; }
         """)
 
-        # Dialog-Steuerung
         self.btn_cancel.clicked.connect(self.reject)
         self.btn_save.clicked.connect(self.validate_and_save)
 
@@ -175,20 +184,78 @@ class BookDialog(QDialog):
         btn_layout.addWidget(self.btn_save)
         layout.addLayout(btn_layout)
 
+    # --- SCANNER & API LOGIK (Mustafa & Ahmet) ---
+    def trigger_camera_scan(self):
+        self.btn_scan.setText("⏳")
+
+        # 1. TRICK FÜR MAC: Fenster nicht "löschen" (hide), sondern 100% durchsichtig machen.
+        # Das verhindert den Modal-Freeze Bug mit dem Hauptfenster!
+        self.setWindowOpacity(0.0)
+        QApplication.processEvents() # Zwingt die GUI, sofort unsichtbar zu werden, bevor die Kamera blockiert
+
+        # 2. Kamera starten
+        scanned_isbn = scan_and_return_isbn()
+
+        # 3. Dialogfenster wieder sichtbar machen und in den Vordergrund holen
+        self.setWindowOpacity(1.0)
+        self.raise_()
+        self.activateWindow()
+        self.btn_scan.setText("📷")
+
+        if scanned_isbn:
+            self.input_isbn.setText(scanned_isbn)
+            self.input_isbn.setStyleSheet("border: 2px solid #4CAF50;")
+
+            # 4. API Abfrage mit Verzögerung, damit die GUI nicht einfriert
+            QTimer.singleShot(100, lambda: self.fetch_book_data_from_api(scanned_isbn))
+
+    def fetch_book_data_from_api(self, isbn):
+        """Holt Buchdaten von der kostenlosen Google Books API."""
+        clean_isbn = isbn.replace("-", "").strip()
+        url = f"https://www.googleapis.com/books/v1/volumes?q=isbn:{clean_isbn}"
+
+        try:
+            response = requests.get(url, timeout=5)
+
+            if response.status_code == 200:
+                data = response.json()
+                if "items" in data and len(data["items"]) > 0:
+                    volume_info = data["items"][0].get("volumeInfo", {})
+
+                    # Titel auslesen
+                    title = volume_info.get("title", "")
+                    if title:
+                        self.input_title.setText(title)
+                        self.input_title.setStyleSheet("border: 2px solid #4CAF50;")
+
+                    # Verlag auslesen
+                    publisher = volume_info.get("publisher", "")
+                    if publisher:
+                        self.input_publisher.setText(publisher)
+                        self.input_publisher.setStyleSheet("border: 2px solid #4CAF50;")
+
+                    # Veröffentlichungsdatum als Fallback für die "Auflage" versuchen
+                    published_date = volume_info.get("publishedDate", "")
+                    if published_date:
+                        # Nehme nur das Jahr (die ersten 4 Zeichen), falls ein komplettes Datum kommt
+                        year = published_date[:4]
+                        self.input_edition.setText(year)
+                        self.input_edition.setStyleSheet("border: 2px solid #4CAF50;")
+
+                else:
+                    print("Buch in Google Books API nicht gefunden.")
+        except Exception as e:
+            print(f"Fehler bei API Abfrage: {e}")
+
+    # ---------------------------------------------
+
     def validate_and_save(self):
-        """
-        Validierung:
-        - ISBN, Titel, Verlag, Auflage dürfen nicht leer sein
-        - Bestand muss eine Zahl sein
-        - Bei Fehler: rote Rahmen + Fehlermeldung anzeigen
-        """
         isbn = self.input_isbn.text().strip()
         t = self.input_title.text().strip()
         p = self.input_publisher.text().strip()
         e = self.input_edition.text().strip()
         s = self.input_stock.text().strip()
 
-        # Reset Rahmen (falls vorher Fehler)
         self.input_isbn.setStyleSheet("")
         self.input_title.setStyleSheet("")
         self.input_publisher.setStyleSheet("")
@@ -335,22 +402,22 @@ class BuchverwaltungWidget(QWidget):
         self.table.verticalHeader().setVisible(False)
 
         header = self.table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)   # ISBN
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)  # ISBN
         self.table.setColumnWidth(0, 160)
 
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)  # Titel
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)  # Verlag
 
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)   # Auflage
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)  # Auflage
         self.table.setColumnWidth(3, 120)
 
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)   # Bestand
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)  # Bestand
         self.table.setColumnWidth(4, 180)
 
-        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)   # Aktionen
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)  # Aktionen
         self.table.setColumnWidth(5, 150)
 
-        #René Bezold, Georg Zinn: Lade-Widget, damit nicht sofort die leere Tabelle angezeigt wird (sondern erst "Daten werden geladen" + Spinner)
+        # René Bezold, Georg Zinn: Lade-Widget, damit nicht sofort die leere Tabelle angezeigt wird (sondern erst "Daten werden geladen" + Spinner)
         self.data_stack = LoadingTableStack(self.table, retry_callback=self.filter_table)
         main_layout.addWidget(self.data_stack)
 
@@ -560,12 +627,12 @@ class BuchverwaltungWidget(QWidget):
             # Fehlerbehandlung, falls der Raspberry Pi nicht antwortet
             self.data_stack.show_error(f"Bestand-Update fehlgeschlagen: {str(e)}")
 
-    #René Bezold, Georg Zinn: Filter- und Sortierlogik mit Ladeanimation + Fehlerbehandlung
+    # René Bezold, Georg Zinn: Filter- und Sortierlogik mit Ladeanimation + Fehlerbehandlung
     def filter_table(self):
         self.data_stack.show_loading()
         self._execute_filter()
 
-    #René Bezold, Georg Zinn: Filter- und Sortierlogik mit Ladeanimation + Fehlerbehandlung
+    # René Bezold, Georg Zinn: Filter- und Sortierlogik mit Ladeanimation + Fehlerbehandlung
     def _execute_filter(self):
         try:
             # 1. Suchtext und Sortierung aus der GUI holen
@@ -584,7 +651,6 @@ class BuchverwaltungWidget(QWidget):
         except Exception as e:
             # Fehlerfall (z.B. Raspberry Pi offline)
             self.data_stack.show_error(f"Datenbankfehler: {str(e)}")
-
 
     def showEvent(self, event):
         super().showEvent(event)
