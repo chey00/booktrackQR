@@ -6,7 +6,7 @@
 
 ## Aktuelle Version
 
-Version: V1.X
+Version: V1.1.6
 
 Die Versionsnummer wird beim Release automatisch aktualisiert.
 
