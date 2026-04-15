@@ -5,19 +5,188 @@
 # - Harun: Dialoge (DeleteConfirmDialog, BookDialog) + Validierung
 # - Batuhan: BuchverwaltungWidget (Layout, Tabelle, Sortierung, Bestand +/- , Aktionen)
 # - René + Georg + Denis: Integration Lade-Indikator & Fehlerbehandlung (User Story Resilienz)
+#
+# Refactoring-Hinweis:
+# - Header, Breadcrumb, Seitentitel und Footer werden jetzt zentral
+#   über BasePageWidget bereitgestellt.
+# - Dadurch wird Code-Duplikation reduziert und das Layout ist
+#   konsistent mit den anderen GUI-Ansichten.
 # ------------------------------------------------------------------------------
 
-import os
 from PyQt6.QtWidgets import (
-    QWidget, QPushButton, QVBoxLayout, QLabel, QHBoxLayout,
+    QPushButton, QVBoxLayout, QLabel, QHBoxLayout,
     QTableWidget, QTableWidgetItem, QHeaderView, QLineEdit,
-    QDialog, QFormLayout, QComboBox
+    QDialog, QFormLayout, QComboBox, QWidget
 )
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QFont, QPixmap
-from app_paths import resource_path_any
-from loading_widgets import LoadingTableStack # Import von René, Denis & Georg
-from database_manager import DatabaseManager # Import von René, Denis & Georg
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QFont
+
+from loading_widgets import LoadingTableStack
+from database_manager import DatabaseManager
+from base_page import BasePageWidget
+
+# ==============================================================================
+# Gemeinsame Styles
+# Zweck:
+# - Vereinheitlichung der Rundungen und Hover-Effekte
+# - Sichtbare Rückmeldung beim Überfahren mit der Maus
+# ==============================================================================
+BUTTON_RADIUS = 10
+
+
+def primary_button_style(color: str) -> str:
+    return f"""
+        QPushButton {{
+            background-color: {color};
+            color: white;
+            padding: 10px 18px;
+            border: 3px solid {color};
+            border-radius: {BUTTON_RADIUS}px;
+            font-weight: bold;
+            font-size: 14px;
+        }}
+        QPushButton:hover {{
+            border: 3px solid #333333;
+            background-color: {color};
+        }}
+        QPushButton:pressed {{
+            background-color: #444444;
+            border: 3px solid #444444;
+        }}
+        QPushButton:disabled {{
+            background-color: #CFCFCF;
+            border: 3px solid #CFCFCF;
+            color: #888888;
+        }}
+    """
+
+
+def neutral_button_style() -> str:
+    return f"""
+        QPushButton {{
+            background-color: #E0E0E0;
+            color: #333333;
+            padding: 10px 18px;
+            border: 3px solid #E0E0E0;
+            border-radius: {BUTTON_RADIUS}px;
+            font-weight: bold;
+            font-size: 14px;
+        }}
+        QPushButton:hover {{
+            border: 3px solid #333333;
+            background-color: #D7D7D7;
+        }}
+        QPushButton:pressed {{
+            background-color: #444444;
+            border: 3px solid #444444;
+            color: white;
+        }}
+    """
+
+
+def danger_button_style() -> str:
+    return f"""
+        QPushButton {{
+            background-color: #D32F2F;
+            color: white;
+            padding: 10px 18px;
+            border: 3px solid #D32F2F;
+            border-radius: {BUTTON_RADIUS}px;
+            font-weight: bold;
+            font-size: 14px;
+        }}
+        QPushButton:hover {{
+            border: 3px solid #333333;
+            background-color: #D32F2F;
+        }}
+        QPushButton:pressed {{
+            background-color: #444444;
+            border: 3px solid #444444;
+        }}
+    """
+
+
+def input_style(accent_color: str) -> str:
+    return f"""
+        QLineEdit {{
+            padding: 10px;
+            border: 1px solid #CCCCCC;
+            border-radius: {BUTTON_RADIUS}px;
+            background-color: #FFFFFF;
+            color: #333333;
+            font-size: 14px;
+        }}
+        QLineEdit:hover {{
+            border: 1px solid #999999;
+        }}
+        QLineEdit:focus {{
+            border: 2px solid {accent_color};
+        }}
+        QLineEdit:disabled {{
+            background-color: #F3F3F3;
+            color: #888888;
+        }}
+    """
+
+
+def combo_style(accent_color: str) -> str:
+    return f"""
+        QComboBox {{
+            padding: 10px;
+            border: 1px solid #CCCCCC;
+            border-radius: {BUTTON_RADIUS}px;
+            background-color: #FFFFFF;
+            color: #333333;
+            font-size: 14px;
+        }}
+        QComboBox:hover {{
+            border: 1px solid #999999;
+        }}
+        QComboBox:focus {{
+            border: 2px solid {accent_color};
+        }}
+        QComboBox::drop-down {{
+            border: none;
+            width: 24px;
+        }}
+    """
+
+
+def icon_button_style(hover_bg: str) -> str:
+    return f"""
+        QPushButton {{
+            background: transparent;
+            border: none;
+            font-size: 20px;
+            border-radius: {BUTTON_RADIUS}px;
+        }}
+        QPushButton:hover {{
+            background-color: {hover_bg};
+        }}
+        QPushButton:pressed {{
+            background-color: #D0D0D0;
+        }}
+    """
+
+
+def stock_button_style() -> str:
+    return f"""
+        QPushButton {{
+            background: #E0E0E0;
+            border: none;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: {BUTTON_RADIUS}px;
+        }}
+        QPushButton:hover {{
+            border: 2px solid #333333;
+            background-color: #D7D7D7;
+        }}
+        QPushButton:pressed {{
+            background: #444444;
+            color: white;
+        }}
+    """
 
 
 # ==============================================================================
@@ -50,18 +219,8 @@ class DeleteConfirmDialog(QDialog):
         self.btn_yes = QPushButton("Löschen")
 
         # Styling der Buttons (Rot = gefährlich / Grau = neutral)
-        style_yes = """
-            QPushButton { background-color: #D32F2F; color: white; padding: 8px; border: 3px solid #D32F2F; border-radius: 6px; font-weight: bold; }
-            QPushButton:hover { border: 3px solid #333333; }
-            QPushButton:pressed { background-color: #444444; border: 3px solid #444444; }
-        """
-        style_no = """
-            QPushButton { background-color: #E0E0E0; color: #333333; padding: 8px; border: 3px solid #E0E0E0; border-radius: 6px; font-weight: bold; }
-            QPushButton:hover { border: 3px solid #333333; }
-            QPushButton:pressed { background-color: #444444; border: 3px solid #444444; color: white; }
-        """
-        self.btn_yes.setStyleSheet(style_yes)
-        self.btn_no.setStyleSheet(style_no)
+        self.btn_yes.setStyleSheet(danger_button_style())
+        self.btn_no.setStyleSheet(neutral_button_style())
 
         # Dialog-Ergebnis: accept() = OK / reject() = Abbrechen
         self.btn_yes.clicked.connect(self.accept)
@@ -86,18 +245,19 @@ class BookDialog(QDialog):
         self.setFixedSize(420, 340)
 
         # Grund-Stylesheet für Dialog + Eingabefelder
-        self.setStyleSheet("""
-            QDialog { background-color: #FFFFFF; }
-            QLabel { color: #333333; font-weight: bold; }
-            QLineEdit {
+        self.setStyleSheet(f"""
+            QDialog {{ background-color: #FFFFFF; }}
+            QLabel {{ color: #333333; font-weight: bold; }}
+            QLineEdit {{
                 background-color: #FFFFFF;
                 border: 1px solid #CCCCCC;
-                border-radius: 4px;
-                padding: 6px;
+                border-radius: {BUTTON_RADIUS}px;
+                padding: 8px;
                 color: #333333;
                 font-size: 14px;
-            }
-            QLineEdit:focus { border: 1px solid #5CB1D6; }
+            }}
+            QLineEdit:hover {{ border: 1px solid #999999; }}
+            QLineEdit:focus {{ border: 2px solid #5CB1D6; }}
         """)
 
         layout = QVBoxLayout(self)
@@ -132,7 +292,16 @@ class BookDialog(QDialog):
             # book_data: (isbn, titel, verlag, auflage, bestand)
             self.input_isbn.setText(book_data[0])
             self.input_isbn.setReadOnly(True)  # ISBN bleibt fix
-            self.input_isbn.setStyleSheet("background:#F3F3F3;")
+            self.input_isbn.setStyleSheet(f"""
+                QLineEdit {{
+                    background:#F3F3F3;
+                    border: 1px solid #CCCCCC;
+                    border-radius: {BUTTON_RADIUS}px;
+                    padding: 8px;
+                    color: #333333;
+                    font-size: 14px;
+                }}
+            """)
             self.input_title.setText(book_data[1])
             self.input_publisher.setText(book_data[2])
             self.input_edition.setText(book_data[3])
@@ -155,16 +324,8 @@ class BookDialog(QDialog):
         self.btn_save = QPushButton("Speichern")
 
         # Button-Styles (Grau / Blau)
-        self.btn_cancel.setStyleSheet("""
-            QPushButton { background-color: #E0E0E0; color: #333333; padding: 7px 17px; border: 3px solid #E0E0E0; border-radius: 4px; font-weight: bold; }
-            QPushButton:hover { border: 3px solid #333333; }
-            QPushButton:pressed { background-color: #444444; border: 3px solid #444444; color: white; }
-        """)
-        self.btn_save.setStyleSheet("""
-            QPushButton { background-color: #5CB1D6; color: white; padding: 7px 17px; border: 3px solid #5CB1D6; border-radius: 4px; font-weight: bold; }
-            QPushButton:hover { border: 3px solid #333333; }
-            QPushButton:pressed { background-color: #444444; border: 3px solid #444444; }
-        """)
+        self.btn_cancel.setStyleSheet(neutral_button_style())
+        self.btn_save.setStyleSheet(primary_button_style("#5CB1D6"))
 
         # Dialog-Steuerung
         self.btn_cancel.clicked.connect(self.reject)
@@ -189,27 +350,36 @@ class BookDialog(QDialog):
         s = self.input_stock.text().strip()
 
         # Reset Rahmen (falls vorher Fehler)
-        self.input_isbn.setStyleSheet("")
-        self.input_title.setStyleSheet("")
-        self.input_publisher.setStyleSheet("")
-        self.input_edition.setStyleSheet("")
-        self.input_stock.setStyleSheet("")
+        default_style = f"""
+            border: 1px solid #CCCCCC;
+            border-radius: {BUTTON_RADIUS}px;
+            padding: 8px;
+        """
+        self.input_isbn.setStyleSheet(default_style)
+        self.input_title.setStyleSheet(default_style)
+        self.input_publisher.setStyleSheet(default_style)
+        self.input_edition.setStyleSheet(default_style)
+        self.input_stock.setStyleSheet(default_style)
 
         ok = True
         if not isbn:
-            self.input_isbn.setStyleSheet("border: 2px solid #D32F2F;")
+            self.input_isbn.setStyleSheet(f"border: 2px solid #D32F2F; border-radius: {BUTTON_RADIUS}px; padding: 8px;")
             ok = False
         if not t:
-            self.input_title.setStyleSheet("border: 2px solid #D32F2F;")
+            self.input_title.setStyleSheet(
+                f"border: 2px solid #D32F2F; border-radius: {BUTTON_RADIUS}px; padding: 8px;")
             ok = False
         if not p:
-            self.input_publisher.setStyleSheet("border: 2px solid #D32F2F;")
+            self.input_publisher.setStyleSheet(
+                f"border: 2px solid #D32F2F; border-radius: {BUTTON_RADIUS}px; padding: 8px;")
             ok = False
         if not e:
-            self.input_edition.setStyleSheet("border: 2px solid #D32F2F;")
+            self.input_edition.setStyleSheet(
+                f"border: 2px solid #D32F2F; border-radius: {BUTTON_RADIUS}px; padding: 8px;")
             ok = False
         if not s or not s.isdigit():
-            self.input_stock.setStyleSheet("border: 2px solid #D32F2F;")
+            self.input_stock.setStyleSheet(
+                f"border: 2px solid #D32F2F; border-radius: {BUTTON_RADIUS}px; padding: 8px;")
             ok = False
 
         if not ok:
@@ -222,62 +392,35 @@ class BookDialog(QDialog):
 # ==============================================================================
 # Batuhan: BuchverwaltungWidget
 # Zweck: Hauptseite der Buchverwaltung
-# - Header (Titel + Logo), Breadcrumbs, Titel
 # - Actionbar: Suche + "Sortieren nach" Dropdown + Button "Buch hinzufügen"
 # - Tabelle mit Bestand (+/-) und Aktionen (Bearbeiten/Löschen)
 # - Suchlogik + Sortierlogik (Titel/Verlag/Auflage)
+#
+# Refactoring:
+# - Das Widget erbt jetzt von BasePageWidget.
+# - Header, Breadcrumb, Seitentitel und Footer werden nicht mehr lokal
+#   aufgebaut, sondern zentral bereitgestellt.
+# - Der eigentliche Seiteninhalt wird nur noch in self.content_layout eingefügt.
 # ==============================================================================
-class BuchverwaltungWidget(QWidget):
+class BuchverwaltungWidget(BasePageWidget):
+    COLOR = "#5CB1D6"
+
     def __init__(self, parent=None):
-        super(BuchverwaltungWidget, self).__init__(parent)
+        super().__init__(
+            breadcrumb_text="Startseite > Hauptmenü > Buchverwaltung",
+            page_title="Bücherverwaltung",
+            accent_color=self.COLOR,
+            parent=parent
+        )
+
         self.db_manager = DatabaseManager()  # Initialisiert den Datenbank-Motor by René, Georg, Denis
-        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setStyleSheet("background-color: #FFFFFF;")
 
         # ---------------------------
         # Layout-Grundstruktur
+        # Hinweis:
+        # - Header/Breadcrumb/Footer werden jetzt zentral von BasePageWidget
+        #   erzeugt und müssen hier nicht mehr separat erstellt werden.
         # ---------------------------
-        main_layout = QVBoxLayout()
-        main_layout.setContentsMargins(50, 30, 50, 50)
-        main_layout.setSpacing(15)
-
-        # ================= HEADER =================
-        header_layout = QHBoxLayout()
-
-        dummy_left = QWidget()
-        dummy_left.setFixedWidth(200)  # sorgt dafür, dass Titel mittig bleibt
-        header_layout.addWidget(dummy_left)
-
-        title_label = QLabel("BooktrackQR")
-        title_label.setFont(QFont("Open Sans", 50, QFont.Weight.Bold))
-        title_label.setStyleSheet("color: #333333; background: transparent; border: none;")
-        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        header_layout.addWidget(title_label)
-
-        # Logo oben rechts
-        logo_label = QLabel()
-        logo_path = self.get_image_path("technikerschule_logo.png")
-        pixmap = QPixmap(logo_path)
-        if not pixmap.isNull():
-            logo_label.setPixmap(
-                pixmap.scaled(200, 80, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-            )
-        logo_label.setFixedWidth(200)
-        logo_label.setAlignment(Qt.AlignmentFlag.AlignRight)
-        header_layout.addWidget(logo_label)
-
-        main_layout.addLayout(header_layout)
-
-        # ================= BREADCRUMBS =================
-        self.back_label = QLabel("Startseite > Hauptmenü > Buchverwaltung")
-        self.back_label.setStyleSheet("color: #666666; font-style: italic; margin-left: 10px;")
-        main_layout.addWidget(self.back_label)
-
-        # ================= TITEL =================
-        page_title = QLabel("Bücherverwaltung")
-        page_title.setFont(QFont("Open Sans", 24, QFont.Weight.Bold))
-        page_title.setStyleSheet("color: #5CB1D6; margin-left: 10px;")
-        main_layout.addWidget(page_title)
 
         # ================= ACTION BAR =================
         # Suche + Sortieren-nach Dropdown + Button "Buch hinzufügen"
@@ -288,32 +431,24 @@ class BuchverwaltungWidget(QWidget):
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("🔍 Suche...")
         self.search_input.setFixedWidth(400)
-        self.search_input.setStyleSheet(
-            "padding: 10px; border: 1px solid #CCCCCC; border-radius: 6px; background-color: #FFFFFF; color: #333333; font-size: 14px;"
-        )
+        self.search_input.setStyleSheet(input_style(self.COLOR))
         action_layout.addWidget(self.search_input)
 
         # >>> ÄNDERUNG: statt Verlag-Filter jetzt Sortierungsauswahl <<<
         self.sort_combo = QComboBox()
         self.sort_combo.addItems(["Sortieren nach: ISBN", "Titel", "Verlag", "Auflage"])
         self.sort_combo.setFixedWidth(200)
-        self.sort_combo.setStyleSheet(
-            "padding: 10px; border: 1px solid #CCCCCC; border-radius: 6px; background-color: #FFFFFF; color: #333333; font-size: 14px;"
-        )
+        self.sort_combo.setStyleSheet(combo_style(self.COLOR))
         action_layout.addWidget(self.sort_combo)
 
         action_layout.addStretch()
 
-        btn_add = QPushButton("➕ Buch hinzufügen")
-        btn_add.setStyleSheet("""
-            QPushButton { background-color: #5CB1D6; color: white; padding: 10px 25px; border: 3px solid #5CB1D6; border-radius: 6px; font-weight: bold; font-size: 14px; }
-            QPushButton:hover { border: 3px solid #333333; }
-            QPushButton:pressed { background-color: #444444; border: 3px solid #444444; }
-        """)
-        btn_add.clicked.connect(self.open_book_dialog)
-        action_layout.addWidget(btn_add)
+        self.btn_add = QPushButton("➕ Buch hinzufügen")
+        self.btn_add.setStyleSheet(primary_button_style(self.COLOR))
+        self.btn_add.clicked.connect(self.open_book_dialog)
+        action_layout.addWidget(self.btn_add)
 
-        main_layout.addLayout(action_layout)
+        self.content_layout.addLayout(action_layout)
 
         # ================= TABLE =================
         self.table = QTableWidget(0, 6)
@@ -322,62 +457,52 @@ class BuchverwaltungWidget(QWidget):
         self.table.setAlternatingRowColors(True)
         self.table.setShowGrid(True)
 
-        self.table.setStyleSheet("""
-            QTableWidget { 
-                background-color: #FFFFFF; alternate-background-color: #F9F9F9; border: 1px solid #E0E0E0; 
-                border-radius: 8px; gridline-color: #EDEDED; font-size: 15px; color: #333333; 
-            }
-            QHeaderView::section { 
-                background-color: #F0F0F0; color: #000000; font-weight: bold; 
-                border: none; border-bottom: 3px solid #5CB1D6; padding: 12px; 
-            }
+        self.table.setStyleSheet(f"""
+            QTableWidget {{
+                background-color: #FFFFFF;
+                alternate-background-color: #F9F9F9;
+                border: 1px solid #E0E0E0;
+                border-radius: 12px;
+                gridline-color: #EDEDED;
+                font-size: 15px;
+                color: #333333;
+            }}
+            QHeaderView::section {{
+                background-color: #F0F0F0;
+                color: #000000;
+                font-weight: bold;
+                border: none;
+                border-bottom: 3px solid {self.COLOR};
+                padding: 12px;
+            }}
         """)
         self.table.verticalHeader().setVisible(False)
 
         header = self.table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)   # ISBN
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)  # ISBN
         self.table.setColumnWidth(0, 160)
 
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)  # Titel
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)  # Verlag
 
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)   # Auflage
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)  # Auflage
         self.table.setColumnWidth(3, 120)
 
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)   # Bestand
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)  # Bestand
         self.table.setColumnWidth(4, 180)
 
-        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)   # Aktionen
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)  # Aktionen
         self.table.setColumnWidth(5, 150)
 
-        #René Bezold, Georg Zinn: Lade-Widget, damit nicht sofort die leere Tabelle angezeigt wird (sondern erst "Daten werden geladen" + Spinner)
+        # René Bezold, Georg Zinn:
+        # Lade-Widget, damit nicht sofort die leere Tabelle angezeigt wird
+        # (sondern erst "Daten werden geladen" + Spinner)
         self.data_stack = LoadingTableStack(self.table, retry_callback=self.filter_table)
-        main_layout.addWidget(self.data_stack)
+        self.content_layout.addWidget(self.data_stack)
 
         # Signale: bei Änderungen sofort aktualisieren (Suche + Sortierung)
         self.search_input.textChanged.connect(self.filter_table)
         self.sort_combo.currentTextChanged.connect(self.filter_table)
-
-        # ================= FOOTER =================
-        footer_layout = QHBoxLayout()
-        footer_layout.addStretch()
-
-        self.btn_back = QPushButton("⬅ Zurück zum Hauptmenü")
-        self.btn_back.setStyleSheet("""
-            QPushButton { background-color: #5CB1D6; color: white; padding: 12px 25px; border: 3px solid #5CB1D6; border-radius: 6px; font-weight: bold; font-size: 13px; }
-            QPushButton:hover { border: 3px solid #333333; }
-            QPushButton:pressed { background-color: #444444; border: 3px solid #444444; }
-        """)
-        footer_layout.addWidget(self.btn_back)
-        main_layout.addLayout(footer_layout)
-
-        self.setLayout(main_layout)
-
-    # --------------------------------------------------------------------------
-    # Helper: Image-Pfad
-    # --------------------------------------------------------------------------
-    def get_image_path(self, filename):
-        return resource_path_any(os.path.join("pic", filename), os.path.join("..", "pic", filename))
 
     # --------------------------------------------------------------------------
     # Tabelle befüllen (0..3 normale Items, 4/5 Widgets)
@@ -412,11 +537,7 @@ class BuchverwaltungWidget(QWidget):
 
         btn_minus = QPushButton("–")
         btn_minus.setFixedSize(35, 35)
-        btn_minus.setStyleSheet("""
-            QPushButton { background: #E0E0E0; border: none; font-size: 18px; font-weight: bold; border-radius: 6px; }
-            QPushButton:hover { border: 2px solid #333333; }
-            QPushButton:pressed { background: #444444; color: white; }
-        """)
+        btn_minus.setStyleSheet(stock_button_style())
 
         lbl_stock = QLabel(str(stock))
         lbl_stock.setFixedWidth(50)
@@ -425,11 +546,7 @@ class BuchverwaltungWidget(QWidget):
 
         btn_plus = QPushButton("+")
         btn_plus.setFixedSize(35, 35)
-        btn_plus.setStyleSheet("""
-            QPushButton { background: #E0E0E0; border: none; font-size: 18px; font-weight: bold; border-radius: 6px; }
-            QPushButton:hover { border: 2px solid #333333; }
-            QPushButton:pressed { background: #444444; color: white; }
-        """)
+        btn_plus.setStyleSheet(stock_button_style())
 
         btn_minus.clicked.connect(lambda ch, x=isbn: self.change_stock(x, -1))
         btn_plus.clicked.connect(lambda ch, x=isbn: self.change_stock(x, +1))
@@ -456,18 +573,12 @@ class BuchverwaltungWidget(QWidget):
 
         btn_edit = QPushButton("✏️")
         btn_edit.setFixedSize(45, 45)
-        btn_edit.setStyleSheet(
-            "QPushButton { background: transparent; border: none; font-size: 20px; }"
-            "QPushButton:hover { background-color: #E0E0E0; border-radius: 8px; }"
-        )
+        btn_edit.setStyleSheet(icon_button_style("#E0E0E0"))
         btn_edit.clicked.connect(lambda ch, x=isbn: self.edit_book(x))
 
         btn_delete = QPushButton("🗑️")
         btn_delete.setFixedSize(45, 45)
-        btn_delete.setStyleSheet(
-            "QPushButton { background: transparent; border: none; font-size: 20px; }"
-            "QPushButton:hover { background-color: #FFCDD2; border-radius: 8px; }"
-        )
+        btn_delete.setStyleSheet(icon_button_style("#FFCDD2"))
         btn_delete.clicked.connect(lambda ch, x=isbn: self.delete_book(x))
 
         action_layout.addWidget(btn_edit)
@@ -497,7 +608,7 @@ class BuchverwaltungWidget(QWidget):
                 self.data_stack.show_error(f"Fehler beim Hinzufügen: {str(e)}")
 
     # --------------------------------------------------------------------------
-    # ändern der aktuellen Werte direkt aus der UI-Tabelle
+    # Ändern der aktuellen Werte direkt aus der UI-Tabelle
     # --------------------------------------------------------------------------
     def edit_book(self, isbn):
         for row in range(self.table.rowCount()):
@@ -560,12 +671,14 @@ class BuchverwaltungWidget(QWidget):
             # Fehlerbehandlung, falls der Raspberry Pi nicht antwortet
             self.data_stack.show_error(f"Bestand-Update fehlgeschlagen: {str(e)}")
 
-    #René Bezold, Georg Zinn: Filter- und Sortierlogik mit Ladeanimation + Fehlerbehandlung
+    # René Bezold, Georg Zinn:
+    # Filter- und Sortierlogik mit Ladeanimation + Fehlerbehandlung
     def filter_table(self):
         self.data_stack.show_loading()
         self._execute_filter()
 
-    #René Bezold, Georg Zinn: Filter- und Sortierlogik mit Ladeanimation + Fehlerbehandlung
+    # René Bezold, Georg Zinn:
+    # Filter- und Sortierlogik mit Ladeanimation + Fehlerbehandlung
     def _execute_filter(self):
         try:
             # 1. Suchtext und Sortierung aus der GUI holen
@@ -585,8 +698,7 @@ class BuchverwaltungWidget(QWidget):
             # Fehlerfall (z.B. Raspberry Pi offline)
             self.data_stack.show_error(f"Datenbankfehler: {str(e)}")
 
-
     def showEvent(self, event):
         super().showEvent(event)
-        # Ruft deine bestehende Lade-Logik auf
+        # Ruft die bestehende Lade-Logik auf
         self.filter_table()

@@ -43,8 +43,7 @@ class MainWindow(QMainWindow):
     def __init__(self, db_config, parent=None):  # db_config hinzugefügt René Bezold, Georg Zinn
         super(MainWindow, self).__init__(parent)
 
-
-        #René Bezold
+        # René Bezold
         self.db_config = db_config
         self.db_manager = DatabaseManager()
         self.error_overlay = None
@@ -52,7 +51,7 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle("BooktrackQR")
         self.setMinimumSize(950, 750)
-        self.setStyleSheet("QWidget { background-color: white; }")
+        self.setStyleSheet("QMainWindow { background-color: white; }")
 
         # Ahmet
         # 1. Den "Kartenstapel" erstellen
@@ -63,16 +62,16 @@ class MainWindow(QMainWindow):
         self.main_menu_widget = CentralWidget(self)
         self.schueler_widget = SchuelerverwaltungWidget(self)
         self.rueckgabe_widget = RueckgabeWidget(self)
-        self.bestand_widget = BuchverwaltungWidget(self)
-        self.ausleihe_widget = AusleiheWidget(self)
+        self.bestand_widget = BuchverwaltungWidget(self)  # Harun Kayaci
+        self.ausleihe_widget = AusleiheWidget(self)  # Batuhan Aktürk & Daniel Popp
 
         # Mustafa
         # 3. Bildschirme zum Stapel hinzufügen
         self.stacked_widget.addWidget(self.main_menu_widget)  # Index 0
         self.stacked_widget.addWidget(self.schueler_widget)  # Index 1
         self.stacked_widget.addWidget(self.rueckgabe_widget)  # Index 2
-        self.stacked_widget.addWidget(self.bestand_widget)  # Index 3 Harun Kayaci
-        self.stacked_widget.addWidget(self.ausleihe_widget)  # Index 4 Batuhan Aktürk & Daniel Popp
+        self.stacked_widget.addWidget(self.bestand_widget)  # Index 3
+        self.stacked_widget.addWidget(self.ausleihe_widget)  # Index 4
 
         # 4. Den Button aus dem Hauptmenü mit der Wechsel-Funktion verbinden
         self.main_menu_widget.btn_schueler.clicked.connect(self.zeige_schuelerverwaltung)
@@ -83,16 +82,16 @@ class MainWindow(QMainWindow):
         # Ahmet
         # Zurück -> Hauptmenü
         self.schueler_widget.btn_back.clicked.connect(self.zeige_hauptmenue)
-        self.rueckgabe_widget.zurueck_btn.clicked.connect(self.zeige_hauptmenue)
-        self.bestand_widget.btn_back.clicked.connect(self.zeige_hauptmenue)  # Zurück-Button Bestand Harun Kayaci
-        self.ausleihe_widget.btn_back.clicked.connect(self.zeige_hauptmenue)  # Batuhan Aktürk & Daniel Popp
+        self.rueckgabe_widget.btn_back.clicked.connect(self.zeige_hauptmenue)
+        self.bestand_widget.btn_back.clicked.connect(self.zeige_hauptmenue)
+        self.ausleihe_widget.btn_back.clicked.connect(self.zeige_hauptmenue)
 
         # René Bezold, Georg Zinn: Thread/Worker-Status für Heartbeat
         self._hb_thread = None
         self._hb_worker = None
         self._hb_running = False
 
-        #René Bezold, Georg Zinn Start des Watchdogs am Ende der
+        # René Bezold, Georg Zinn Start des Watchdogs
         self.db_watchdog = QTimer(self)
         self.db_watchdog.setInterval(10000)
         self.db_watchdog.timeout.connect(self.check_heartbeat)
@@ -155,7 +154,7 @@ class MainWindow(QMainWindow):
     # René Bezold, Georg Zinn
     def show_db_down_gui(self, fehler):
         """Erzeugt ein Fullscreen-Overlay, wenn der Server weg ist."""
-        if self.error_overlay: 
+        if self.error_overlay:
             return
         self.db_watchdog.stop()
         self.error_overlay = QWidget(self)

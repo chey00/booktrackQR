@@ -31,6 +31,12 @@
 #   insbesondere bei der Strukturierung des Ablaufs, der fachlichen
 #   Einordnung der Rückgabeschritte, der Verarbeitung von Scan-Ergebnissen
 #   sowie der gemeinsamen Ausarbeitung der Rückgabeprüfung und Fehlerszenarien.
+#
+# Refactoring-Hinweis:
+# - Header, Breadcrumb, Seitentitel und Footer werden jetzt zentral
+#   über BasePageWidget bereitgestellt.
+# - Dadurch wird Code-Duplikation reduziert und das Layout ist
+#   konsistent mit den anderen GUI-Ansichten.
 # ------------------------------------------------------------------------------
 
 import os
@@ -38,31 +44,156 @@ import sqlite3
 from datetime import datetime
 
 from PyQt6.QtWidgets import (
-    QWidget, QPushButton, QVBoxLayout, QLabel, QHBoxLayout,
+    QPushButton, QLabel, QHBoxLayout,
     QTableWidget, QTableWidgetItem, QHeaderView, QLineEdit,
-    QMessageBox, QDialog, QComboBox, QInputDialog
+    QMessageBox, QDialog, QComboBox, QInputDialog, QWidget, QVBoxLayout
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont, QPixmap
+from PyQt6.QtGui import QFont
 from app_paths import resource_path_any
+from base_page import BasePageWidget
+
+# ==============================================================================
+# Gemeinsame Styles
+# Zweck:
+# - Vereinheitlichung der Rundungen und Hover-Effekte
+# - Sichtbare Rückmeldung beim Überfahren mit der Maus
+# ==============================================================================
+BUTTON_RADIUS = 10
 
 
+def primary_button_style(color: str) -> str:
+    return f"""
+        QPushButton {{
+            background-color: {color};
+            color: white;
+            padding: 10px 18px;
+            border: 3px solid {color};
+            border-radius: {BUTTON_RADIUS}px;
+            font-weight: bold;
+            font-size: 14px;
+        }}
+        QPushButton:hover {{
+            border: 3px solid #333333;
+            background-color: {color};
+        }}
+        QPushButton:pressed {{
+            background-color: #444444;
+            border: 3px solid #444444;
+        }}
+        QPushButton:disabled {{
+            background-color: #CFCFCF;
+            border: 3px solid #CFCFCF;
+            color: #888888;
+        }}
+    """
+
+
+def neutral_button_style() -> str:
+    return f"""
+        QPushButton {{
+            background-color: #E0E0E0;
+            color: #333333;
+            padding: 10px 18px;
+            border: 3px solid #E0E0E0;
+            border-radius: {BUTTON_RADIUS}px;
+            font-weight: bold;
+            font-size: 14px;
+        }}
+        QPushButton:hover {{
+            border: 3px solid #333333;
+            background-color: #D7D7D7;
+        }}
+        QPushButton:pressed {{
+            background-color: #444444;
+            border: 3px solid #444444;
+            color: white;
+        }}
+    """
+
+
+def input_style(accent_color: str) -> str:
+    return f"""
+        QLineEdit {{
+            padding: 10px;
+            border: 1px solid #CCCCCC;
+            border-radius: {BUTTON_RADIUS}px;
+            background-color: #FFFFFF;
+            color: #333333;
+            font-size: 14px;
+        }}
+        QLineEdit:hover {{
+            border: 1px solid #999999;
+        }}
+        QLineEdit:focus {{
+            border: 2px solid {accent_color};
+        }}
+        QLineEdit:disabled {{
+            background-color: #F3F3F3;
+            color: #888888;
+        }}
+    """
+
+
+def combo_style(accent_color: str) -> str:
+    return f"""
+        QComboBox {{
+            background: #FFFFFF;
+            border: 1px solid #CCCCCC;
+            border-radius: {BUTTON_RADIUS}px;
+            padding: 10px;
+            color: #333333;
+            font-size: 14px;
+        }}
+        QComboBox:hover {{
+            border: 1px solid #999999;
+        }}
+        QComboBox:focus {{
+            border: 2px solid {accent_color};
+        }}
+        QComboBox::drop-down {{
+            border: none;
+            width: 28px;
+        }}
+        QComboBox QAbstractItemView {{
+            background: #FFFFFF;
+            color: #333333;
+            border: 1px solid #CFCFCF;
+            selection-background-color: #E0E0E0;
+            selection-color: #000000;
+            outline: none;
+        }}
+        QComboBox QAbstractItemView::item {{
+            padding: 8px;
+        }}
+        QComboBox QAbstractItemView::item:hover {{
+            background-color: #ECECEC;
+            color: #000000;
+        }}
+        QComboBox QAbstractItemView::item:selected {{
+            background-color: #DADADA;
+            color: #000000;
+        }}
+    """
+
+
+# ==============================================================================
+# FakeScanDialog
+# Zweck:
+# - Demo-Dialog für den Scan-Vorgang (Jaclyn Barta).
+# - Simuliert die Kamera-Erkennung für die Sprint-Präsentation.
+#
+# Erweiterte Nutzung im Team:
+# - Batuhan Aktürk:
+#   Mitarbeit bei der Nutzung des Dialogs für die Rückgabe per Scan,
+#   damit der Ablauf für Schüler und Buch nachvollziehbar demonstriert
+#   und geprüft werden kann.
+# - Harun:
+#   Mitarbeit bei der Nutzung des Dialogs für die Rückgabe per Scan,
+#   damit der Ablauf logisch strukturiert und für den Sprint
+#   konsistent verwendet werden kann.
+# ==============================================================================
 class FakeScanDialog(QDialog):
-    """
-    Demo-Dialog für den Scan-Vorgang (Jaclyn Barta).
-    Simuliert die Kamera-Erkennung für die Sprint-Präsentation.
-
-    Erweiterte Nutzung im Team:
-    - Batuhan Aktürk:
-      Mitarbeit bei der Nutzung des Dialogs für die Rückgabe per Scan,
-      damit der Ablauf für Schüler und Buch nachvollziehbar demonstriert
-      und geprüft werden kann.
-    - Harun:
-      Mitarbeit bei der Nutzung des Dialogs für die Rückgabe per Scan,
-      damit der Ablauf logisch strukturiert und für den Sprint
-      konsistent verwendet werden kann.
-    """
-
     def __init__(self, parent=None, title="QR scannen", items=None, color="#E57368", allow_manual=True):
         super().__init__(parent)
 
@@ -73,39 +204,39 @@ class FakeScanDialog(QDialog):
         self._items = items or []
         self._allow_manual = allow_manual
 
-        self.setStyleSheet("""
-            QDialog {
+        self.setStyleSheet(f"""
+            QDialog {{
                 background: #FFFFFF;
-            }
+            }}
 
-            QLabel {
+            QLabel {{
                 color: #333333;
                 background: transparent;
-            }
+            }}
 
-            QComboBox {
+            QComboBox {{
                 background: #FFFFFF;
                 border: 1px solid #CFCFCF;
-                border-radius: 6px;
+                border-radius: {BUTTON_RADIUS}px;
                 padding: 10px 12px;
                 color: #333333;
                 min-height: 22px;
-            }
+            }}
 
-            QComboBox:hover {
+            QComboBox:hover {{
                 border: 1px solid #B8B8B8;
-            }
+            }}
 
-            QComboBox::drop-down {
+            QComboBox::drop-down {{
                 border: none;
                 width: 34px;
-            }
+            }}
 
-            QComboBox::down-arrow {
+            QComboBox::down-arrow {{
                 image: none;
-            }
+            }}
 
-            QComboBox QAbstractItemView {
+            QComboBox QAbstractItemView {{
                 background: #FFFFFF;
                 color: #333333;
                 border: 1px solid #CFCFCF;
@@ -113,14 +244,7 @@ class FakeScanDialog(QDialog):
                 selection-color: #333333;
                 outline: 0px;
                 padding: 4px;
-            }
-
-            QPushButton {
-                border: none;
-                border-radius: 6px;
-                font-weight: bold;
-                padding: 10px 20px;
-            }
+            }}
         """)
 
         layout = QVBoxLayout(self)
@@ -136,7 +260,7 @@ class FakeScanDialog(QDialog):
         )
         self.video_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.video_placeholder.setMinimumSize(640, 340)
-        self.video_placeholder.setStyleSheet("""
+        self.video_placeholder.setStyleSheet(f"""
             border: 1px solid #D8D8D8;
             border-radius: 12px;
             background: #F7F7F7;
@@ -153,6 +277,7 @@ class FakeScanDialog(QDialog):
         self.combo.addItem("Bitte auswählen (Demo)…")
         for x in self._items:
             self.combo.addItem(x)
+        self.combo.setStyleSheet(combo_style(color))
         layout.addWidget(self.combo)
 
         btn_row = QHBoxLayout()
@@ -162,15 +287,9 @@ class FakeScanDialog(QDialog):
         self.btn_cancel = QPushButton("Abbrechen")
         self.btn_demo_scan = QPushButton("Demo-Scan")
 
-        self.btn_manual.setStyleSheet(
-            "background-color: #F2F2F2; color:#333333; padding: 10px 20px; font-weight: bold; border-radius: 6px;"
-        )
-        self.btn_cancel.setStyleSheet(
-            "background-color: #E6E6E6; color:#333333; padding: 10px 20px; font-weight: bold; border-radius: 6px;"
-        )
-        self.btn_demo_scan.setStyleSheet(
-            f"background-color: {self._color}; color: white; padding: 10px 20px; font-weight: bold; border-radius: 6px;"
-        )
+        self.btn_manual.setStyleSheet(neutral_button_style())
+        self.btn_cancel.setStyleSheet(neutral_button_style())
+        self.btn_demo_scan.setStyleSheet(primary_button_style(self._color))
 
         self.btn_cancel.clicked.connect(self.reject)
         self.btn_demo_scan.clicked.connect(self._do_demo_scan)
@@ -211,19 +330,20 @@ class FakeScanDialog(QDialog):
             self.accept()
 
 
+# ==============================================================================
+# ZustandDialog
+# Zweck:
+# - Optionaler Dialog zur Erfassung des Buchzustands bei Rückgabe.
+#
+# Team-Erweiterung:
+# - Batuhan Aktürk:
+#   Mitarbeit an der fachlichen Ergänzung des optionalen Zustands,
+#   damit Schäden nachvollziehbar bleiben.
+# - Harun:
+#   Mitarbeit an der Einordnung des Zustandsdialogs als optionalen
+#   Teil der Rückgabe gemäß User Story.
+# ==============================================================================
 class ZustandDialog(QDialog):
-    """
-    Optionaler Dialog zur Erfassung des Buchzustands bei Rückgabe.
-
-    Team-Erweiterung:
-    - Batuhan Aktürk:
-      Mitarbeit an der fachlichen Ergänzung des optionalen Zustands,
-      damit Schäden nachvollziehbar bleiben.
-    - Harun:
-      Mitarbeit an der Einordnung des Zustandsdialogs als optionalen
-      Teil der Rückgabe gemäß User Story.
-    """
-
     def __init__(self, parent=None, color="#E57368"):
         super().__init__(parent)
         self.setWindowTitle("Zustand des Buches")
@@ -246,38 +366,7 @@ class ZustandDialog(QDialog):
             "Leicht beschädigt",
             "Stark beschädigt"
         ])
-        self.combo.setStyleSheet("""
-            QComboBox {
-                background: #FFFFFF;
-                border: 1px solid #CCCCCC;
-                border-radius: 6px;
-                padding: 10px;
-                color: #333333;
-            }
-
-            QComboBox QAbstractItemView {
-                background: #FFFFFF;
-                color: #333333;
-                border: 1px solid #CFCFCF;
-                selection-background-color: #D0D0D0;
-                selection-color: #000000;
-                outline: none;
-            }
-
-            QComboBox QAbstractItemView::item {
-                padding: 8px;
-            }
-
-            QComboBox QAbstractItemView::item:hover {
-                background-color: #E0E0E0;
-                color: #000000;
-            }
-
-            QComboBox QAbstractItemView::item:selected {
-                background-color: #D0D0D0;
-                color: #000000;
-            }
-        """)
+        self.combo.setStyleSheet(combo_style(color))
         layout.addWidget(self.combo)
 
         btn_row = QHBoxLayout()
@@ -286,12 +375,8 @@ class ZustandDialog(QDialog):
         btn_cancel = QPushButton("Abbrechen")
         btn_ok = QPushButton("Übernehmen")
 
-        btn_cancel.setStyleSheet(
-            "background-color: #E0E0E0; padding: 10px 20px; font-weight: bold; border-radius: 6px;"
-        )
-        btn_ok.setStyleSheet(
-            f"background-color: {color}; color: white; padding: 10px 20px; font-weight: bold; border-radius: 6px;"
-        )
+        btn_cancel.setStyleSheet(neutral_button_style())
+        btn_ok.setStyleSheet(primary_button_style(color))
 
         btn_cancel.clicked.connect(self.reject)
         btn_ok.clicked.connect(self._accept_condition)
@@ -308,14 +393,19 @@ class ZustandDialog(QDialog):
         self.accept()
 
 
-class RueckgabeWidget(QWidget):
+# ==============================================================================
+# Haupt-Widget: RueckgabeWidget
+# ==============================================================================
+class RueckgabeWidget(BasePageWidget):
     COLOR_RED = "#E57368"
 
     def __init__(self, parent=None, db_path=None):
-        super().__init__(parent)
-
-        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setStyleSheet("background-color: #FFFFFF;")
+        super().__init__(
+            breadcrumb_text="Startseite > Hauptmenü > Rückgabe",
+            page_title="Rückgabe",
+            accent_color=self.COLOR_RED,
+            parent=parent
+        )
 
         self.db_path = db_path or resource_path_any(
             os.path.join("data", "booktrackqr.db"),
@@ -361,125 +451,63 @@ class RueckgabeWidget(QWidget):
 
         self._ensure_return_log_table()
 
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(50, 25, 50, 40)
-        main_layout.setSpacing(14)
-
-        # --- HEADER ---
-        header_layout = QHBoxLayout()
-        dummy_left = QWidget()
-        dummy_left.setFixedWidth(200)
-        header_layout.addWidget(dummy_left)
-
-        title_label = QLabel("BooktrackQR")
-        title_label.setFont(QFont("Open Sans", 42, QFont.Weight.Bold))
-        title_label.setStyleSheet("color: #333333;")
-        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        header_layout.addWidget(title_label)
-
-        logo_label = QLabel()
-        logo_path = resource_path_any(
-            os.path.join("pic", "technikerschule_logo.png"),
-            os.path.join("..", "pic", "technikerschule_logo.png")
-        )
-        pixmap = QPixmap(logo_path)
-        if not pixmap.isNull():
-            logo_label.setPixmap(
-                pixmap.scaled(180, 70, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-            )
-        logo_label.setFixedWidth(200)
-        header_layout.addWidget(logo_label)
-
-        main_layout.addLayout(header_layout)
-
-        breadcrumb = QLabel("Startseite > Hauptmenü > Rückgabe")
-        breadcrumb.setStyleSheet("color:#666666; font-size:14px;")
-        main_layout.addWidget(breadcrumb)
-
-        page_title = QLabel("Rückgabe")
-        page_title.setFont(QFont("Open Sans", 24, QFont.Weight.Bold))
-        page_title.setStyleSheet(f"color: {self.COLOR_RED};")
-        main_layout.addWidget(page_title)
-
         info_text = QLabel(
             "Ablauf: Schüler scannen oder ID eingeben → ausgeliehene Bücher anzeigen → "
             "Buch scannen/eingeben → Zustand auswählen → Rückgabe übernehmen."
         )
         info_text.setStyleSheet("color:#333333; font-size:15px;")
-        main_layout.addWidget(info_text)
+        self.content_layout.addWidget(info_text)
 
         # --- SCHÜLERBEREICH ---
         student_row = QHBoxLayout()
 
         self.in_student = QLineEdit()
         self.in_student.setPlaceholderText("Schüler-ID eingeben oder scannen...")
-        self.in_student.setStyleSheet("""
-            QLineEdit {
-                padding: 10px;
-                border: 1px solid #CCCCCC;
-                border-radius: 6px;
-                background: #FFFFFF;
-            }
-        """)
+        self.in_student.setStyleSheet(input_style(self.COLOR_RED))
 
         self.btn_take_student = QPushButton("Übernehmen")
-        self.btn_take_student.setStyleSheet(
-            f"background-color: {self.COLOR_RED}; color: white; padding: 10px 20px; font-weight: bold; border-radius: 6px;"
-        )
+        self.btn_take_student.setStyleSheet(primary_button_style(self.COLOR_RED))
         self.btn_take_student.clicked.connect(self.take_student_from_input)
 
         self.btn_scan_student = QPushButton("Schülerausweis scannen")
-        self.btn_scan_student.setStyleSheet(
-            f"background-color: {self.COLOR_RED}; color: white; padding: 10px 20px; font-weight: bold; border-radius: 6px;"
-        )
+        self.btn_scan_student.setStyleSheet(primary_button_style(self.COLOR_RED))
         self.btn_scan_student.clicked.connect(self.scan_student)
 
         student_row.addWidget(self.in_student, 1)
         student_row.addWidget(self.btn_take_student)
         student_row.addWidget(self.btn_scan_student)
-        main_layout.addLayout(student_row)
+        self.content_layout.addLayout(student_row)
 
         self.lbl_student_selected = QLabel("")
         self.lbl_student_selected.setStyleSheet("color:#2E7D32; font-size:15px; font-weight:bold;")
-        main_layout.addWidget(self.lbl_student_selected)
+        self.content_layout.addWidget(self.lbl_student_selected)
 
         # --- BUCHBEREICH ---
         book_row = QHBoxLayout()
 
         self.in_book = QLineEdit()
         self.in_book.setPlaceholderText("ISBN oder Buchcode eingeben / scannen...")
-        self.in_book.setStyleSheet("""
-            QLineEdit {
-                padding: 10px;
-                border: 1px solid #CCCCCC;
-                border-radius: 6px;
-                background: #FFFFFF;
-            }
-        """)
+        self.in_book.setStyleSheet(input_style(self.COLOR_RED))
 
         self.btn_take_book = QPushButton("Übernehmen")
-        self.btn_take_book.setStyleSheet(
-            f"background-color: {self.COLOR_RED}; color: white; padding: 10px 20px; font-weight: bold; border-radius: 6px;"
-        )
+        self.btn_take_book.setStyleSheet(primary_button_style(self.COLOR_RED))
         self.btn_take_book.setEnabled(False)
         self.btn_take_book.clicked.connect(self.return_book_from_input)
 
         self.btn_scan_book = QPushButton("QR-Code scannen")
-        self.btn_scan_book.setStyleSheet(
-            f"background-color: {self.COLOR_RED}; color: white; padding: 10px 20px; font-weight: bold; border-radius: 6px;"
-        )
+        self.btn_scan_book.setStyleSheet(primary_button_style(self.COLOR_RED))
         self.btn_scan_book.setEnabled(False)
         self.btn_scan_book.clicked.connect(self.scan_book_return)
 
         book_row.addWidget(self.in_book, 1)
         book_row.addWidget(self.btn_take_book)
         book_row.addWidget(self.btn_scan_book)
-        main_layout.addLayout(book_row)
+        self.content_layout.addLayout(book_row)
 
         # --- EINE ZENTRALE TABELLE ---
         self.lbl_open_returns = QLabel("Aktuell ausgeliehene / offene Rückgaben des ausgewählten Schülers:")
         self.lbl_open_returns.setStyleSheet("color:#333333; font-size:15px; font-weight:bold;")
-        main_layout.addWidget(self.lbl_open_returns)
+        self.content_layout.addWidget(self.lbl_open_returns)
 
         self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(["Buchcode", "ISBN", "Titel", "Zustand"])
@@ -491,7 +519,7 @@ class RueckgabeWidget(QWidget):
         self.table.setStyleSheet(f"""
             QTableWidget {{
                 border: 1px solid #D9D9D9;
-                border-radius: 8px;
+                border-radius: 12px;
                 gridline-color: #E5E5E5;
                 background: #FFFFFF;
             }}
@@ -503,38 +531,24 @@ class RueckgabeWidget(QWidget):
                 padding: 8px;
             }}
         """)
-        main_layout.addWidget(self.table)
+        self.content_layout.addWidget(self.table)
 
         # --- BUTTONS UNTEN ---
         bottom_row = QHBoxLayout()
         bottom_row.addStretch()
 
         self.btn_reset = QPushButton("Zurücksetzen")
-        self.btn_reset.setStyleSheet(
-            "background-color: #E0E0E0; color:#333333; padding: 10px 24px; font-weight: bold; border-radius: 6px;"
-        )
+        self.btn_reset.setStyleSheet(neutral_button_style())
         self.btn_reset.clicked.connect(self.reset_view)
 
         self.btn_finish = QPushButton("Rückgabe abschließen")
-        self.btn_finish.setStyleSheet(
-            f"background-color: {self.COLOR_RED}; color: white; padding: 10px 24px; font-weight: bold; border-radius: 6px;"
-        )
+        self.btn_finish.setStyleSheet(primary_button_style(self.COLOR_RED))
         self.btn_finish.clicked.connect(self.finish_return_process)
         self.btn_finish.setEnabled(False)
 
         bottom_row.addWidget(self.btn_reset)
         bottom_row.addWidget(self.btn_finish)
-        main_layout.addLayout(bottom_row)
-
-        footer_layout = QHBoxLayout()
-        footer_layout.addStretch()
-
-        self.zurueck_btn = QPushButton("⬅ Zurück zum Hauptmenü")
-        self.zurueck_btn.setStyleSheet(
-            f"background-color: {self.COLOR_RED}; color: white; padding: 10px 25px; font-weight: bold; border-radius: 6px;"
-        )
-        footer_layout.addWidget(self.zurueck_btn)
-        main_layout.addLayout(footer_layout)
+        self.content_layout.addLayout(bottom_row)
 
     # --------------------------------------------------------------------------
     # DB-HILFSMETHODEN
@@ -557,17 +571,37 @@ class RueckgabeWidget(QWidget):
 
         try:
             conn.execute("""
-                CREATE TABLE IF NOT EXISTS RueckgabeProtokoll (
-                    rueckgabe_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    student_id TEXT NOT NULL,
-                    exemplar_id INTEGER NOT NULL,
-                    isbn TEXT,
-                    titel TEXT,
-                    buchcode TEXT,
-                    rueckgabe_am TEXT NOT NULL,
-                    zustand TEXT NOT NULL
-                )
-            """)
+                         CREATE TABLE IF NOT EXISTS RueckgabeProtokoll
+                         (
+                             rueckgabe_id
+                             INTEGER
+                             PRIMARY
+                             KEY
+                             AUTOINCREMENT,
+                             student_id
+                             TEXT
+                             NOT
+                             NULL,
+                             exemplar_id
+                             INTEGER
+                             NOT
+                             NULL,
+                             isbn
+                             TEXT,
+                             titel
+                             TEXT,
+                             buchcode
+                             TEXT,
+                             rueckgabe_am
+                             TEXT
+                             NOT
+                             NULL,
+                             zustand
+                             TEXT
+                             NOT
+                             NULL
+                         )
+                         """)
             conn.commit()
         except sqlite3.Error:
             pass
@@ -583,16 +617,14 @@ class RueckgabeWidget(QWidget):
         if conn is not None:
             try:
                 rows = conn.execute("""
-                    SELECT
-                        s.student_id,
-                        s.vorname,
-                        s.nachname,
-                        COALESCE(sk.name, '') AS klasse
-                    FROM Studierende s
-                    LEFT JOIN Schulklasse sk ON s.schulklasse_id = sk.schulklasse_id
-                    ORDER BY s.student_id
-                    LIMIT 50
-                """).fetchall()
+                                    SELECT s.student_id,
+                                           s.vorname,
+                                           s.nachname,
+                                           COALESCE(sk.name, '') AS klasse
+                                    FROM Studierende s
+                                             LEFT JOIN Schulklasse sk ON s.schulklasse_id = sk.schulklasse_id
+                                    ORDER BY s.student_id LIMIT 50
+                                    """).fetchall()
 
                 items = []
                 for row in rows:
@@ -627,15 +659,14 @@ class RueckgabeWidget(QWidget):
         if conn is not None:
             try:
                 row = conn.execute("""
-                    SELECT
-                        s.student_id,
-                        s.vorname,
-                        s.nachname,
-                        COALESCE(sk.name, '') AS klasse
-                    FROM Studierende s
-                    LEFT JOIN Schulklasse sk ON s.schulklasse_id = sk.schulklasse_id
-                    WHERE s.student_id = ?
-                """, (student_id,)).fetchone()
+                                   SELECT s.student_id,
+                                          s.vorname,
+                                          s.nachname,
+                                          COALESCE(sk.name, '') AS klasse
+                                   FROM Studierende s
+                                            LEFT JOIN Schulklasse sk ON s.schulklasse_id = sk.schulklasse_id
+                                   WHERE s.student_id = ?
+                                   """, (student_id,)).fetchone()
 
                 if row:
                     vorname = row["vorname"] or ""
@@ -662,19 +693,18 @@ class RueckgabeWidget(QWidget):
 
         try:
             rows = conn.execute("""
-                SELECT
-                    a.ausleihe_id,
-                    a.student_id,
-                    a.exemplar_id,
-                    COALESCE(b.qr_code, '') AS book_code,
-                    COALESCE(t.isbn, '') AS isbn,
-                    COALESCE(t.titel, '') AS titel
-                FROM Ausleihe_Aktuell a
-                JOIN BuchExemplar b ON a.exemplar_id = b.exemplar_id
-                JOIN BuchTitel t ON b.titel_id = t.titel_id
-                WHERE a.student_id = ?
-                ORDER BY t.titel
-            """, (student_id,)).fetchall()
+                                SELECT a.ausleihe_id,
+                                       a.student_id,
+                                       a.exemplar_id,
+                                       COALESCE(b.qr_code, '') AS book_code,
+                                       COALESCE(t.isbn, '')    AS isbn,
+                                       COALESCE(t.titel, '')   AS titel
+                                FROM Ausleihe_Aktuell a
+                                         JOIN BuchExemplar b ON a.exemplar_id = b.exemplar_id
+                                         JOIN BuchTitel t ON b.titel_id = t.titel_id
+                                WHERE a.student_id = ?
+                                ORDER BY t.titel
+                                """, (student_id,)).fetchall()
 
             result = []
             for row in rows:
@@ -709,23 +739,24 @@ class RueckgabeWidget(QWidget):
             conn.execute("BEGIN")
 
             conn.execute("""
-                INSERT INTO RueckgabeProtokoll (
-                    student_id, exemplar_id, isbn, titel, buchcode, rueckgabe_am, zustand
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (
-                str(student_id),
-                int(book["exemplar_id"]),
-                book["isbn"],
-                book["titel"],
-                book["book_code"],
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                selected_condition
-            ))
+                         INSERT INTO RueckgabeProtokoll (student_id, exemplar_id, isbn, titel, buchcode, rueckgabe_am,
+                                                         zustand)
+                         VALUES (?, ?, ?, ?, ?, ?, ?)
+                         """, (
+                             str(student_id),
+                             int(book["exemplar_id"]),
+                             book["isbn"],
+                             book["titel"],
+                             book["book_code"],
+                             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                             selected_condition
+                         ))
 
             conn.execute("""
-                DELETE FROM Ausleihe_Aktuell
-                WHERE ausleihe_id = ?
-            """, (int(book["ausleihe_id"]),))
+                         DELETE
+                         FROM Ausleihe_Aktuell
+                         WHERE ausleihe_id = ?
+                         """, (int(book["ausleihe_id"]),))
 
             conn.commit()
             return True, None
@@ -769,6 +800,34 @@ class RueckgabeWidget(QWidget):
 
         return normalized_code, isbn_only
 
+    def show_message(self, title, text, icon=QMessageBox.Icon.Information):
+        msg = QMessageBox(self)
+        msg.setWindowTitle(title)
+        msg.setText(text)
+        msg.setIcon(icon)
+        msg.setStyleSheet(f"""
+            QMessageBox {{
+                background-color: #FFFFFF;
+            }}
+            QLabel {{
+                color: #333333;
+                font-size: 14px;
+            }}
+            QPushButton {{
+                background-color: #E0E0E0;
+                color: #333333;
+                padding: 8px 16px;
+                border-radius: {BUTTON_RADIUS}px;
+                border: 1px solid #CCCCCC;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background-color: #D0D0D0;
+                border: 1px solid #333333;
+            }}
+        """)
+        msg.exec()
+
     # --------------------------------------------------------------------------
     # SCHÜLERLOGIK
     # --------------------------------------------------------------------------
@@ -790,7 +849,8 @@ class RueckgabeWidget(QWidget):
     def take_student_from_input(self):
         raw = self.in_student.text().strip()
         if not raw:
-            QMessageBox.warning(self, "Hinweis", "Bitte zuerst eine Schüler-ID eingeben oder scannen.")
+            self.show_message("Hinweis", "Bitte zuerst eine Schüler-ID eingeben oder scannen.",
+                              QMessageBox.Icon.Warning)
             return
 
         if " - " in raw:
@@ -824,8 +884,7 @@ class RueckgabeWidget(QWidget):
         self.btn_finish.setEnabled(has_books)
 
         if not has_books:
-            QMessageBox.information(
-                self,
+            self.show_message(
                 "Hinweis",
                 "Für diesen Schüler sind aktuell keine ausgeliehenen Bücher vorhanden."
             )
@@ -835,7 +894,7 @@ class RueckgabeWidget(QWidget):
     # --------------------------------------------------------------------------
     def scan_book_return(self):
         if not self.current_student_id:
-            QMessageBox.warning(self, "Hinweis", "Bitte zuerst einen Schüler scannen.")
+            self.show_message("Hinweis", "Bitte zuerst einen Schüler scannen.", QMessageBox.Icon.Warning)
             return
 
         demo_items = []
@@ -862,14 +921,14 @@ class RueckgabeWidget(QWidget):
     def return_book_from_input(self):
         scanned_text = self.in_book.text().strip()
         if not scanned_text:
-            QMessageBox.warning(self, "Hinweis", "Bitte zuerst ISBN oder Buchcode eingeben.")
+            self.show_message("Hinweis", "Bitte zuerst ISBN oder Buchcode eingeben.", QMessageBox.Icon.Warning)
             return
 
         self.process_book_return(scanned_text)
 
     def process_book_return(self, scanned_text):
         if not self.current_student_id:
-            QMessageBox.warning(self, "Hinweis", "Bitte zuerst einen Schüler scannen.")
+            self.show_message("Hinweis", "Bitte zuerst einen Schüler scannen.", QMessageBox.Icon.Warning)
             return
 
         normalized_code, isbn_only = self.normalize_book_input(scanned_text)
@@ -886,11 +945,11 @@ class RueckgabeWidget(QWidget):
         # Typischer Fehlerfall laut PBI:
         # Buch nicht gefunden / nicht ausgeliehen -> Meldung, keine Datenänderung
         if found_book is None:
-            QMessageBox.critical(
-                self,
+            self.show_message(
                 "Fehlhinweis",
                 "Das gescannte Buch ist diesem Schüler nicht zugeordnet oder aktuell nicht ausgeliehen.\n\n"
-                "Es wurde keine Datenänderung durchgeführt."
+                "Es wurde keine Datenänderung durchgeführt.",
+                QMessageBox.Icon.Critical
             )
             return
 
@@ -914,16 +973,16 @@ class RueckgabeWidget(QWidget):
             original_books = self.dummy_loans.get(self.current_student_id, [])
             for i, original_book in enumerate(original_books):
                 if (
-                    original_book["book_code"] == normalized_code
-                    or original_book["isbn"] == isbn_only
+                        original_book["book_code"] == normalized_code
+                        or original_book["isbn"] == isbn_only
                 ):
                     original_books.pop(i)
                     break
         elif not success:
-            QMessageBox.critical(
-                self,
+            self.show_message(
                 "Datenbankfehler",
-                f"Die Rückgabe konnte nicht gespeichert werden.\n\n{db_error}"
+                f"Die Rückgabe konnte nicht gespeichert werden.\n\n{db_error}",
+                QMessageBox.Icon.Critical
             )
             return
         else:
@@ -932,8 +991,7 @@ class RueckgabeWidget(QWidget):
         self.refresh_table()
         self.in_book.clear()
 
-        QMessageBox.information(
-            self,
+        self.show_message(
             "Erfolg",
             f"Buch {isbn_only} erfolgreich zurückgegeben.\nZustand: {selected_condition}"
         )
@@ -942,8 +1000,7 @@ class RueckgabeWidget(QWidget):
             self.btn_scan_book.setEnabled(False)
             self.btn_take_book.setEnabled(False)
             self.btn_finish.setEnabled(False)
-            QMessageBox.information(
-                self,
+            self.show_message(
                 "Abgeschlossen",
                 "Alle ausgeliehenen Bücher dieses Schülers wurden zurückgegeben."
             )
@@ -953,11 +1010,10 @@ class RueckgabeWidget(QWidget):
     # --------------------------------------------------------------------------
     def finish_return_process(self):
         if not self.current_student_id:
-            QMessageBox.warning(self, "Hinweis", "Es ist aktuell kein Schüler ausgewählt.")
+            self.show_message("Hinweis", "Es ist aktuell kein Schüler ausgewählt.", QMessageBox.Icon.Warning)
             return
 
-        QMessageBox.information(
-            self,
+        self.show_message(
             "Rückgabe abgeschlossen",
             "Der Rückgabevorgang wurde abgeschlossen."
         )
