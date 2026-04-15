@@ -2,10 +2,11 @@
 # Projekt: BooktrackQR
 # Modul: ISBN_Scanner (PBI 10.1.1 & Integration)
 # Autoren: Mustafa Demiral, Ahmet Toplar
-# Beschreibung: OpenCV Scanner für ISBN Barcodes mit Ziel-Overlay und Abbrechen-Button.
+# Beschreibung: Robuster Scanner mittels pyzbar mit Ziel-Overlay und Abbrechen-Button.
 # ------------------------------------------------------------------------------
 import cv2
-from pyzbar.pyzbar import decode
+import re
+from pyzbar.pyzbar import decode  # Wir nutzen wieder die Profi-Bibliothek!
 
 # Globale Variable, um den Maus-Klick zu registrieren
 abbruch_geklickt = False
@@ -41,7 +42,6 @@ def scan_and_return_isbn():
         if not ret:
             break
 
-        # Dimensionen des Fensters holen
         h, w, _ = frame.shape
 
         # Ein rotes Ziel-Rechteck in der Mitte zeichnen
@@ -55,31 +55,32 @@ def scan_and_return_isbn():
         cv2.rectangle(overlay, (start_x - 20, start_y - 20), (end_x + 20, end_y + 20), (0, 0, 255), 1)
         frame = cv2.addWeighted(overlay, 0.7, frame, 0.3, 0)
 
-        # --- NEU: Abbrechen-Button oben links einzeichnen ---
-        # Grauer Hintergrund für den Button
+        # --- Abbrechen-Button oben links einzeichnen ---
         cv2.rectangle(frame, (20, 20), (160, 60), (220, 220, 220), -1)
-        # Roter Rand für den Button
         cv2.rectangle(frame, (20, 20), (160, 60), (0, 0, 200), 2)
-        # Text im Button
         cv2.putText(frame, "Abbrechen", (30, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
         # ----------------------------------------------------
 
-        # Suche nach Barcodes
+        # Suche nach Barcodes mit der starken pyzbar-Bibliothek
         barcodes = decode(frame)
 
         for barcode in barcodes:
-            barcode_data = barcode.data.decode('utf-8')
+            raw_data = barcode.data.decode('utf-8')
             barcode_type = barcode.type
 
             # Zeichne einen Rahmen um den erkannten Barcode
             (bx, by, bw, bh) = barcode.rect
             cv2.rectangle(frame, (bx, by), (bx + bw, by + bh), (255, 165, 0), 2)
 
-            if barcode_type == 'EAN13' and (barcode_data.startswith('978') or barcode_data.startswith('979')):
-                found_isbn = barcode_data
+            # Filter für saubere Zahlen
+            clean_digits = re.sub(r'\D', '', raw_data)
+
+            # Prüfen, ob es eine ISBN ist (EAN-13, startet mit 978 oder 979)
+            if barcode_type == 'EAN13' and (clean_digits.startswith('978') or clean_digits.startswith('979')):
+                found_isbn = clean_digits[:13]
                 break
             else:
-                display_text = "Falsches Produkt (Keine ISBN)"
+                display_text = f"Falsches Produkt erkannt: {clean_digits}"
                 text_color = (0, 0, 255)
 
         # Schleife abbrechen, wenn eine ISBN gefunden ODER der Button geklickt wurde
