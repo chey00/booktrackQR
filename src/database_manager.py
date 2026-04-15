@@ -555,3 +555,45 @@ class DatabaseManager:
             raise e
         finally:
             conn.close()
+
+# ==============================================================================
+    # NEU (User Story): Methoden für Ausleihe und Rückgabe
+    # ==============================================================================
+
+    def get_active_loans_for_student(self, qr_id):
+        """Holt alle aktuell ausgeliehenen Bücher für einen Schüler (SQL zentral)."""
+        student_info = self.get_student_by_qr_id(qr_id)
+        if not student_info:
+            return []
+
+        real_db_id = student_info["db_id"]
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cursor:
+                # SQL-Abfrage über die View
+                sql = "SELECT isbn, titel FROM v_studierende_ausleihen WHERE studierende_id = %s"
+                cursor.execute(sql, (real_db_id,))
+                return cursor.fetchall()
+        finally:
+            conn.close()
+
+    def return_book_by_isbn(self, qr_id, isbn):
+        """Regelt die Rückgabe (Löschen aus Ausleihe_Aktuell) via SQL."""
+        student_info = self.get_student_by_qr_id(qr_id)
+        if not student_info:
+            return False
+
+        real_db_id = student_info["db_id"]
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cursor:
+                # Sub-Select löst das Problem der fehlenden ISBN-Spalte in Ausleihe_Aktuell
+                sql = """
+                    DELETE FROM Ausleihe_Aktuell 
+                    WHERE studierende_id = %s 
+                    AND exemplar_id IN (SELECT exemplar_id FROM BuchExemplar WHERE isbn = %s)
+                """
+                cursor.execute(sql, (real_db_id, isbn))
+                return cursor.rowcount > 0
+        finally:
+            conn.close()
