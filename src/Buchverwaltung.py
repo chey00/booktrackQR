@@ -4,8 +4,9 @@
 # Modul: BuchverwaltungWidget (GUI Design & Logik)
 # Autoren:
 # - Harun: Dialoge (DeleteConfirmDialog, BookDialog) + Validierung
+# - Mustafa & Ahmet: ISBN Scanner Integration (Kamera) & Multi-API-Autofill
 # - Batuhan: BuchverwaltungWidget (Layout, Tabelle, Sortierung, Bestand +/- , Aktionen)
-# - René + Georg + Denis: Integration Lade-Indikator & Fehlerbehandlung (User Story Resilienz)
+# - René + Georg + Denis: Integration Lade-Indikator & Fehlerbehandlung
 #
 # Refactoring-Hinweis:
 # - Header, Breadcrumb, Seitentitel und Footer werden jetzt zentral
@@ -14,17 +15,20 @@
 #   konsistent mit den anderen GUI-Ansichten.
 # ------------------------------------------------------------------------------
 
+import requests  # Import für die Google Books & OpenLibrary API (Mustafa & Ahmet)
+import re  # Import für Datums-Extraktion
 from PyQt6.QtWidgets import (
     QPushButton, QVBoxLayout, QLabel, QHBoxLayout,
     QTableWidget, QTableWidgetItem, QHeaderView, QLineEdit,
-    QDialog, QFormLayout, QComboBox, QWidget
+    QDialog, QFormLayout, QComboBox, QWidget, QApplication
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont
 
 from loading_widgets import LoadingTableStack
 from database_manager import DatabaseManager
 from base_page import BasePageWidget
+from ISBN_Scanner import scan_and_return_isbn  # Import Mustafa & Ahmet
 
 # ==============================================================================
 # Gemeinsame Styles
@@ -233,10 +237,8 @@ class DeleteConfirmDialog(QDialog):
 
 
 # ==============================================================================
-# Harun: BookDialog
+# Harun, Mustafa & Ahmet: BookDialog (Integriert mit Barcode-Scanner & Auto-Fill)
 # Zweck: Dialog zum "Buch hinzufügen" und "Buch bearbeiten"
-# - Bei Bearbeiten ist ISBN read-only (damit Schlüssel nicht geändert wird).
-# - validate_and_save() prüft Pflichtfelder + Bestand muss Zahl sein.
 # ==============================================================================
 class BookDialog(QDialog):
     def __init__(self, parent=None, book_data=None):
@@ -267,9 +269,25 @@ class BookDialog(QDialog):
         form_layout = QFormLayout()
         form_layout.setSpacing(15)
 
-        # Eingabefelder
+        # --- ISBN Feld + Kamera Button (Mustafa & Ahmet) ---
+        isbn_layout = QHBoxLayout()
+        isbn_layout.setContentsMargins(0, 0, 0, 0)
+
         self.input_isbn = QLineEdit()
         self.input_isbn.setPlaceholderText("ISBN eingeben")
+
+        self.btn_scan = QPushButton("📷")
+        self.btn_scan.setFixedSize(32, 32)
+        self.btn_scan.setStyleSheet(f"""
+            QPushButton {{ background-color: #E0E0E0; border: 1px solid #CCCCCC; border-radius: {BUTTON_RADIUS}px; font-size: 16px; }}
+            QPushButton:hover {{ background-color: #5CB1D6; color: white; border: 1px solid #5CB1D6; }}
+        """)
+        self.btn_scan.setToolTip("ISBN scannen & Daten automatisch ausfüllen")
+        self.btn_scan.clicked.connect(self.trigger_camera_scan)
+
+        isbn_layout.addWidget(self.input_isbn)
+        isbn_layout.addWidget(self.btn_scan)
+        # ----------------------------------------------------
 
         self.input_title = QLineEdit()
         self.input_title.setPlaceholderText("Titel eingeben")
@@ -303,13 +321,19 @@ class BookDialog(QDialog):
                     font-size: 14px;
                 }}
             """)
+
+            # Scanner-Button im Bearbeiten-Modus deaktivieren
+            self.btn_scan.setEnabled(False)
+            self.btn_scan.setStyleSheet(
+                f"background-color: #F3F3F3; color: #CCCCCC; border: 1px solid #CCCCCC; border-radius: {BUTTON_RADIUS}px;")
+
             self.input_title.setText(book_data[1])
             self.input_publisher.setText(book_data[2])
             self.input_edition.setText(book_data[3])
             self.input_stock.setText(str(book_data[4]))
 
         # Pflichtfelder mit * markiert
-        form_layout.addRow(QLabel("ISBN*:"), self.input_isbn)
+        form_layout.addRow(QLabel("ISBN*:"), isbn_layout)
         form_layout.addRow(QLabel("Titel*:"), self.input_title)
         form_layout.addRow(QLabel("Verlag*:"), self.input_publisher)
         form_layout.addRow(QLabel("Auflage*:"), self.input_edition)
@@ -336,6 +360,102 @@ class BookDialog(QDialog):
         btn_layout.addWidget(self.btn_cancel)
         btn_layout.addWidget(self.btn_save)
         layout.addLayout(btn_layout)
+
+    # --- SCANNER & API LOGIK (Mustafa & Ahmet) ---
+    def trigger_camera_scan(self):
+        self.btn_scan.setText("⏳")
+
+        # 1. TRICK FÜR MAC: Fenster nicht "löschen" (hide), sondern 100% durchsichtig machen.
+        self.setWindowOpacity(0.0)
+        QApplication.processEvents()  # Zwingt die GUI, sofort unsichtbar zu werden
+
+        # 2. Kamera starten
+        scanned_isbn = scan_and_return_isbn()
+
+        # 3. Dialogfenster wieder sichtbar machen und in den Vordergrund holen
+        self.setWindowOpacity(1.0)
+        self.raise_()
+        self.activateWindow()
+        self.btn_scan.setText("📷")
+
+        if scanned_isbn:
+            self.input_isbn.setText(scanned_isbn)
+            self.input_isbn.setStyleSheet(f"border: 2px solid #4CAF50; border-radius: {BUTTON_RADIUS}px; padding: 8px;")
+
+            # 4. API Abfrage mit Verzögerung, damit die GUI nicht einfriert
+            QTimer.singleShot(100, lambda: self.fetch_book_data_from_api(scanned_isbn))
+
+    def fetch_book_data_from_api(self, isbn):
+        """Holt Buchdaten von Google Books oder OpenLibrary als Fallback."""
+        clean_isbn = isbn.replace("-", "").strip()
+
+        # --- 1. VERSUCH: Google Books API ---
+        google_url = f"https://www.googleapis.com/books/v1/volumes?q=isbn:{clean_isbn}"
+        try:
+            response = requests.get(google_url, timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                if "items" in data and len(data["items"]) > 0:
+                    volume_info = data["items"][0].get("volumeInfo", {})
+
+                    title = volume_info.get("title", "")
+                    publisher = volume_info.get("publisher", "")
+                    published_date = volume_info.get("publishedDate", "")
+                    year = published_date[:4] if published_date else ""
+
+                    if title:  # Wenn Google etwas gefunden hat, tragen wir es ein und brechen ab
+                        self._apply_api_data(title, publisher, year)
+                        return
+        except Exception as e:
+            print(f"Fehler bei Google API: {e}")
+
+        # --- 2. VERSUCH: OpenLibrary API (Wenn Google das Buch nicht kennt) ---
+        openlib_url = f"https://openlibrary.org/api/books?bibkeys=ISBN:{clean_isbn}&jscmd=data&format=json"
+        try:
+            response = requests.get(openlib_url, timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                key = f"ISBN:{clean_isbn}"
+                if key in data:
+                    book_info = data[key]
+                    title = book_info.get("title", "")
+
+                    # Verlage kommen bei OpenLibrary als Liste
+                    publishers = book_info.get("publishers", [])
+                    publisher = publishers[0].get("name", "") if publishers else ""
+
+                    # Jahr formatieren (OpenLibrary liefert oft "October 2019", wir wollen nur "2019")
+                    year_raw = book_info.get("publish_date", "")
+                    year_match = re.search(r'\d{4}', year_raw) if year_raw else None
+                    year = year_match.group(0) if year_match else year_raw
+
+                    if title:  # Wenn OpenLibrary etwas gefunden hat
+                        self._apply_api_data(title, publisher, year)
+                        return
+        except Exception as e:
+            print(f"Fehler bei OpenLibrary API: {e}")
+
+        # --- 3. WENN BEIDE DATENBANKEN DAS BUCH NICHT KENNEN ---
+        print("Buch in keinen APIs gefunden (Weder Google noch OpenLibrary).")
+        self.input_title.setPlaceholderText("Nicht gefunden - Bitte manuell tippen")
+        self.input_publisher.setPlaceholderText("Nicht gefunden - Bitte manuell tippen")
+
+    def _apply_api_data(self, title, publisher, year):
+        """Hilfsfunktion, um die Felder grün zu markieren und zu füllen."""
+        if title:
+            self.input_title.setText(title)
+            self.input_title.setStyleSheet(
+                f"border: 2px solid #4CAF50; border-radius: {BUTTON_RADIUS}px; padding: 8px;")
+        if publisher:
+            self.input_publisher.setText(publisher)
+            self.input_publisher.setStyleSheet(
+                f"border: 2px solid #4CAF50; border-radius: {BUTTON_RADIUS}px; padding: 8px;")
+        if year:
+            self.input_edition.setText(year)
+            self.input_edition.setStyleSheet(
+                f"border: 2px solid #4CAF50; border-radius: {BUTTON_RADIUS}px; padding: 8px;")
+
+    # ---------------------------------------------
 
     def validate_and_save(self):
         """
