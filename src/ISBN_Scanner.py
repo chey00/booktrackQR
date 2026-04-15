@@ -2,11 +2,12 @@
 # Projekt: BooktrackQR
 # Modul: ISBN_Scanner (PBI 10.1.1 & Integration)
 # Autoren: Mustafa Demiral, Ahmet Toplar
-# Beschreibung: Robuster Scanner mittels pyzbar mit Ziel-Overlay und Abbrechen-Button.
+# Beschreibung: Robuster Scanner mittels ZXing (OHNE pyzbar, OHNE Mac-Terminal-Zwang).
+# Fix: Format-Check gelockert, erkennt jetzt zuverlässig jede 978/979 ISBN.
 # ------------------------------------------------------------------------------
 import cv2
 import re
-from pyzbar.pyzbar import decode  # Wir nutzen wieder die Profi-Bibliothek!
+import zxingcpp
 
 # Globale Variable, um den Maus-Klick zu registrieren
 abbruch_geklickt = False
@@ -55,35 +56,39 @@ def scan_and_return_isbn():
         cv2.rectangle(overlay, (start_x - 20, start_y - 20), (end_x + 20, end_y + 20), (0, 0, 255), 1)
         frame = cv2.addWeighted(overlay, 0.7, frame, 0.3, 0)
 
-        # --- Abbrechen-Button oben links einzeichnen ---
+        # --- Abbrechen-Button ---
         cv2.rectangle(frame, (20, 20), (160, 60), (220, 220, 220), -1)
         cv2.rectangle(frame, (20, 20), (160, 60), (0, 0, 200), 2)
         cv2.putText(frame, "Abbrechen", (30, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
-        # ----------------------------------------------------
 
-        # Suche nach Barcodes mit der starken pyzbar-Bibliothek
-        barcodes = decode(frame)
+        # --- Barcode lesen mit ZXing ---
+        results = zxingcpp.read_barcodes(frame)
 
-        for barcode in barcodes:
-            raw_data = barcode.data.decode('utf-8')
-            barcode_type = barcode.type
+        for result in results:
+            raw_data = result.text
 
-            # Zeichne einen Rahmen um den erkannten Barcode
-            (bx, by, bw, bh) = barcode.rect
-            cv2.rectangle(frame, (bx, by), (bx + bw, by + bh), (255, 165, 0), 2)
+            # Zeichne einen blauen Rahmen um den erkannten Barcode
+            try:
+                p = result.position
+                cv2.line(frame, (p.top_left.x, p.top_left.y), (p.top_right.x, p.top_right.y), (255, 165, 0), 2)
+                cv2.line(frame, (p.top_right.x, p.top_right.y), (p.bottom_right.x, p.bottom_right.y), (255, 165, 0), 2)
+                cv2.line(frame, (p.bottom_right.x, p.bottom_right.y), (p.bottom_left.x, p.bottom_left.y), (255, 165, 0),
+                         2)
+                cv2.line(frame, (p.bottom_left.x, p.bottom_left.y), (p.top_left.x, p.top_left.y), (255, 165, 0), 2)
+            except Exception:
+                pass
 
-            # Filter für saubere Zahlen
+                # Zahlen filtern (falls unsichtbare Sonderzeichen dabei sind)
             clean_digits = re.sub(r'\D', '', raw_data)
 
-            # Prüfen, ob es eine ISBN ist (EAN-13, startet mit 978 oder 979)
-            if barcode_type == 'EAN13' and (clean_digits.startswith('978') or clean_digits.startswith('979')):
+            # FIX: Wir prüfen nur noch, ob die Nummer wie eine ISBN aussieht (13 Zahlen, beginnt mit 978/979)
+            if len(clean_digits) >= 13 and (clean_digits.startswith('978') or clean_digits.startswith('979')):
                 found_isbn = clean_digits[:13]
                 break
             else:
                 display_text = f"Falsches Produkt erkannt: {clean_digits}"
                 text_color = (0, 0, 255)
 
-        # Schleife abbrechen, wenn eine ISBN gefunden ODER der Button geklickt wurde
         if found_isbn or abbruch_geklickt:
             break
 
@@ -95,18 +100,15 @@ def scan_and_return_isbn():
 
         cv2.imshow(fenster_name, frame)
 
-        # Manuelles Beenden über die Taste 'q'
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
-        # Manuelles Beenden über das rote 'X' von macOS abfangen (verhindert Abstürze)
         if cv2.getWindowProperty(fenster_name, cv2.WND_PROP_VISIBLE) < 1:
             break
 
-    # Alles sauber schließen
     cap.release()
     cv2.destroyAllWindows()
-    cv2.waitKey(1)  # Extra-Sicherheit für macOS, damit das Fenster auch wirklich schließt
+    cv2.waitKey(1)
 
     return found_isbn
 
