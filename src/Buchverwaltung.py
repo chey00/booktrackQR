@@ -1,5 +1,6 @@
 # ------------------------------------------------------------------------------
 # Projekt: BooktrackQR
+#
 # Modul: BuchverwaltungWidget (GUI Design & Logik)
 # Autoren:
 # - Harun: Dialoge (DeleteConfirmDialog, BookDialog) + Validierung

@@ -3,6 +3,7 @@
 # Modul: AusleiheWidget (GUI Design & Sprint-Demo)
 # Datei: Ausleihe.py
 #
+#
 # Autoren: Batuhan Aktürk & Daniel Popp (Entstanden im Pair Programming)
 #
 # Stand (Epic 8):

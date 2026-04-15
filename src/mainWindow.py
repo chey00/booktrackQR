@@ -1,6 +1,7 @@
 # ------------------------------------------------------------------------------
 # Projekt: BooktrackQR
 # Modul: MainWindow (GUI)
+#
 # Autoren: Mustafa Demiral, Ahmet Toplar, Harun Kayaci, Daniel Popp, Batuhan Aktürk, René Bezold, Georg Zinn
 # Stand: GUI mit Logik (Inklusive Buchverwaltung/Bestand)
 # ------------------------------------------------------------------------------

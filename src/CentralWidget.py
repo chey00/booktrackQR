@@ -1,5 +1,6 @@
 # ------------------------------------------------------------------------------
 # Projekt: BooktrackQR
+#
 # Modul: CentralWidget (GUI Design)
 # Autoren: Daniel Popp und Mustafa Demiral
 # Stand: GUI mit Original-Farben und korrigierten Variablen

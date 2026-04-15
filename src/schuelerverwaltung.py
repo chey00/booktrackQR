@@ -2,6 +2,7 @@
 # Projekt: BooktrackQR
 # Modul: Gesamte Verwaltung (Schüler, Klassen, Schuljahre)
 # Sprint 2 Autoren: Mustafa Demiral, Ahmet Toplar
+#
 # Sprint 3 Autoren: Mustafa Demiral, Luis Overrath
 # Sprint 4 Autor: Mustafa Demiral (Dynamische ID-Kalkulation, Mac-Design-Fixes)
 # Sprint 5 Autor: Mustafa Demiral (Soft-Delete & Admin-Löschung für Schüler)

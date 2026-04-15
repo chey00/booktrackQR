@@ -1,5 +1,6 @@
 # ------------------------------------------------------------------------------
 # Projekt: BooktrackQR
+#
 # Modul: RückgabeWidget (GUI Design & Schüler-Buchliste Erweiterung)
 # Datei: Rueckgabe.py
 #
