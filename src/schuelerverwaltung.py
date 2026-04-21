@@ -1,12 +1,12 @@
 # ------------------------------------------------------------------------------
 # Projekt: BooktrackQR
-# Modul: Gesamte Verwaltung (Schüler, Klassen, Schuljahre)
+# Modul: Gesamte Verwaltung (Schüler, Klassen, Schuljahre, Buchlisten)
 # Sprint 2 Autoren: Mustafa Demiral, Ahmet Toplar
-#
 # Sprint 3 Autoren: Mustafa Demiral, Luis Overrath
 # Sprint 4 Autor: Mustafa Demiral (Dynamische ID-Kalkulation, Mac-Design-Fixes)
 # Sprint 5 Autor: Mustafa Demiral (Soft-Delete & Admin-Löschung für Schüler)
-# Stand: Soft-Delete implementiert, Löschen nur mit Admin-Passwort, Design stabil
+# Sprint 8 Autoren: Mustafa Demiral, Ahmet Toplar (PBI 10.3 & 10.3.1: Buchlisten anlegen)
+# Stand: Soft-Delete implementiert, Mac-DarkMode-Fix für Listen integriert, Buchlisten-Tab integriert.
 #
 # Refactoring-Hinweis:
 # - Header, Breadcrumb, Seitentitel und Footer werden jetzt zentral
@@ -20,7 +20,8 @@ from PyQt6.QtWidgets import (
     QPushButton, QVBoxLayout,
     QLabel, QHBoxLayout, QTableWidget, QTableWidgetItem,
     QHeaderView, QLineEdit, QComboBox, QDialog, QFormLayout,
-    QFileDialog, QMessageBox, QTabWidget, QWidget
+    QFileDialog, QMessageBox, QTabWidget, QWidget,
+    QListWidget, QListWidgetItem, QAbstractItemView
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QBrush
@@ -100,6 +101,31 @@ def get_input_style(accent_color="#F1BD4D"):
     """
 
 
+# Mac Dark-Mode Fix für QListWidget
+def get_list_style():
+    return f"""
+    QListWidget {{
+        background-color: #FFFFFF;
+        color: #333333;
+        border: 1px solid #CCCCCC;
+        border-radius: {BUTTON_RADIUS}px;
+        padding: 5px;
+        font-size: 14px;
+    }}
+    QListWidget::item {{
+        padding: 8px;
+    }}
+    QListWidget::item:selected {{
+        background-color: #F1BD4D;
+        color: #FFFFFF;
+        border-radius: 5px;
+    }}
+    QListWidget::item:hover {{
+        background-color: #F9F9F9;
+    }}
+    """
+
+
 # --- Standard Dialog für Klassen und Jahre ---
 class DeleteConfirmDialog(QDialog):
     def __init__(self, parent=None, warning_text="⚠️ Möchten Sie diesen Datensatz wirklich\nunwiderruflich löschen?"):
@@ -125,8 +151,7 @@ class DeleteConfirmDialog(QDialog):
         layout.addLayout(btn_layout)
 
 
-# --- MUSTAFA DEMIRAL (Sprint 5): Neuer Dialog für Schüler (Soft-Delete vs. Passwort-Delete) ---
-# --- Passwort hierfür ist "admin123" ---
+# --- MUSTAFA DEMIRAL (Sprint 5): Neuer Dialog für Schüler ---
 class StudentDeleteDialog(QDialog):
     def __init__(self, parent=None, student_name=""):
         super().__init__(parent)
@@ -188,7 +213,7 @@ class StudentDeleteDialog(QDialog):
             self.error_label.setText("Falsches Admin-Passwort! Löschen verweigert.")
 
 
-# --- MUSTAFA DEMIRAL (Sprint 5): Neuer Dialog um das komplette Archiv per Admin-Passwort zu leeren ---
+# --- MUSTAFA DEMIRAL (Sprint 5): Dialog Archiv leeren ---
 class CleanArchiveDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -240,7 +265,7 @@ class CleanArchiveDialog(QDialog):
 # DIALOGE
 # ==============================================================================
 
-# --- AHMET TOPLAR (Sprint 2): Grundaufbau und UI-Elemente für den Schüler-Dialog ---
+# --- AHMET TOPLAR (Sprint 2): Schüler-Dialog ---
 class StudentDialog(QDialog):
     def __init__(self, parent=None, student_data=None):
         super().__init__(parent)
@@ -276,7 +301,6 @@ class StudentDialog(QDialog):
         self.combo_jahr = QComboBox()
         self.combo_jahr.addItems(["Bitte wählen...", "2023-24", "2024-25", "2025-26", "2026-27"])
 
-        # MUSTAFA DEMIRAL (Sprint 4/5): Neues Layout für die dynamische ID-Anzeige inkl. manueller Eingabe
         self.id_prefix_label = QLabel("..._..._")
         self.id_prefix_label.setStyleSheet("color: #666666; font-style: italic; font-weight: normal;")
 
@@ -342,7 +366,6 @@ class StudentDialog(QDialog):
         else:
             self.id_prefix_label.setText("..._..._")
 
-    # --- AHMET TOPLAR (Sprint 2): Validierung der Pflichtfelder ---
     def validate_and_save(self):
         valid = True
 
@@ -364,7 +387,7 @@ class StudentDialog(QDialog):
             self.accept()
 
 
-# --- LUIS OVERRATH (Sprint 3): Dialog für die Erstellung und Bearbeitung von Klassen ---
+# --- LUIS OVERRATH (Sprint 3): Klassen Dialog ---
 class KlassenDialog(QDialog):
     def __init__(self, parent=None, klassen_data=None):
         super().__init__(parent)
@@ -420,7 +443,7 @@ class KlassenDialog(QDialog):
         layout.addLayout(btn_layout)
 
 
-# --- LUIS OVERRATH (Sprint 3): Dialog für die Verwaltung der Schuljahre ---
+# --- LUIS OVERRATH (Sprint 3): Schuljahr Dialog ---
 class SchuljahrDialog(QDialog):
     def __init__(self, parent=None, jahr_data=None):
         super().__init__(parent)
@@ -473,7 +496,6 @@ class SchuljahrDialog(QDialog):
 # TABS
 # ==============================================================================
 
-# --- AHMET TOPLAR (Sprint 2): Basis-Klasse für alle Tabs zur Vermeidung von Code-Duplikation ---
 class BaseTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -540,7 +562,6 @@ class BaseTab(QWidget):
         msg.exec()
 
 
-# --- AHMET TOPLAR (Sprint 2): Hauptansicht für Schüler mit Such- und Filterfunktion ---
 class SchuelerTab(BaseTab):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -737,11 +758,9 @@ class SchuelerTab(BaseTab):
                 else:
                     self.show_popup("Fehler", f"Die ID {manual_id} ist in dieser Klasse bereits vergeben!")
 
-    # --- MUSTAFA DEMIRAL (Sprint 5): Die neue sichere Lösch-Logik (Soft- & Hard-Delete via Admin-Passwort) ---
     def delete_student(self, sid, student_name):
         if not self.db_manager:
             return
-
         dialog = StudentDeleteDialog(self, student_name=student_name)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             if dialog.result_action == 'deactivate':
@@ -753,7 +772,6 @@ class SchuelerTab(BaseTab):
                 self.refresh_data()
                 self.show_popup("Erfolg", f"Der Schüler '{student_name}' wurde endgültig gelöscht.")
 
-    # --- MUSTAFA DEMIRAL (Sprint 5): Löscht nach Bestätigung alle Inaktiven restlos aus der DB ---
     def clean_archive(self):
         if not self.db_manager:
             return
@@ -766,8 +784,6 @@ class SchuelerTab(BaseTab):
                 f"Erfolgreich ausgeführt!\n\nEs wurden {deleted_count} inaktive Schüler dauerhaft aus der Datenbank gelöscht."
             )
 
-    # --- LUIS OVERRATH (Sprint 3): Basis CSV & Excel Import-Logik für Schüler ---
-    # --- MUSTAFA DEMIRAL (Sprint 5): Intelligenter Import greift IDs ab und fängt Duplikate lautlos ab, ohne abzustürzen ---
     def import_students(self):
         file_path, _ = QFileDialog.getOpenFileName(
             self, "Schüler importieren", "",
@@ -789,10 +805,8 @@ class SchuelerTab(BaseTab):
                     header_line = file.readline()
                     delim = ';' if ';' in header_line else ','
                     file.seek(0)
-
                     reader = csv.reader(file, delimiter=delim)
                     headers = next(reader, [])
-
                     id_idx, vn_idx, nn_idx, kl_idx, j_idx = -1, -1, -1, -1, -1
                     for i, h in enumerate(headers):
                         h_up = str(h).upper()
@@ -818,10 +832,8 @@ class SchuelerTab(BaseTab):
                             klasse = str(row[kl_idx]).strip()
                             jahr = str(row[j_idx]).strip()
 
-                            if not vorname or not nachname:
-                                continue
-                            if klasse not in ["MB", "MT", "KI", "WI"]:
-                                continue
+                            if not vorname or not nachname: continue
+                            if klasse not in ["MB", "MT", "KI", "WI"]: continue
 
                             manual_id = None
                             if raw_id:
@@ -839,20 +851,16 @@ class SchuelerTab(BaseTab):
                                     imported_count += 1
                                 else:
                                     skipped_count += 1
-                            except Exception:
+                            except:
                                 skipped_count += 1
 
             elif file_path.lower().endswith('.xlsx'):
                 try:
                     import pandas as pd
                 except ImportError:
-                    self.show_popup(
-                        "Fehler",
-                        "Für den Excel-Import muss 'pandas' installiert sein!\nBitte führe 'pip install pandas openpyxl' im Terminal aus."
-                    )
+                    self.show_popup("Fehler", "Für den Excel-Import muss 'pandas' installiert sein!")
                     return
                 df = pd.read_excel(file_path)
-
                 id_col = None
                 for col in df.columns:
                     if "ID" in str(col).strip().upper():
@@ -868,15 +876,12 @@ class SchuelerTab(BaseTab):
                         vorname = str(row.get('Vorname', '')).strip()
                         nachname = str(row.get('Nachname', '')).strip()
                         klasse = str(row.get('Klasse', '')).strip()
-
                         jahr = str(row.get('Eintrittsschuljahr', '')).strip()
                         if not jahr or jahr == 'nan':
                             jahr = str(row.get('Schuljahr', '')).strip()
 
                         if nachname and vorname and nachname != 'nan':
-                            if klasse not in ["MB", "MT", "KI", "WI"]:
-                                continue
-
+                            if klasse not in ["MB", "MT", "KI", "WI"]: continue
                             manual_id = None
                             if raw_id and raw_id.lower() != 'nan':
                                 try:
@@ -884,7 +889,7 @@ class SchuelerTab(BaseTab):
                                         manual_id = int(raw_id.split('_')[-1])
                                     else:
                                         manual_id = int(float(raw_id))
-                                except ValueError:
+                                except:
                                     pass
 
                             success = self.db_manager.add_student(nachname, vorname, klasse, jahr, manual_id)
@@ -892,20 +897,16 @@ class SchuelerTab(BaseTab):
                                 imported_count += 1
                             else:
                                 skipped_count += 1
-                    except Exception:
+                    except:
                         skipped_count += 1
 
             self.refresh_data()
-            self.show_popup(
-                "Import abgeschlossen",
-                f"Erfolgreich hinzugefügt: {imported_count}\nÜbersprungen (Fehler/Duplikate): {skipped_count}"
-            )
+            self.show_popup("Import abgeschlossen", f"Erfolgreich: {imported_count}\nÜbersprungen: {skipped_count}")
 
         except Exception as e:
             self.show_popup("Achtung", f"Der Import wurde abgebrochen:\n\n{e}")
 
 
-# --- LUIS OVERRATH (Sprint 3): Implementierung der Klassen- und Schuljahrverwaltung ---
 class KlassenTab(BaseTab):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -974,8 +975,7 @@ class KlassenTab(BaseTab):
                 pass
 
     def filter_table(self):
-        if not self.db_manager:
-            return
+        if not self.db_manager: return
         alle_klassen = self.db_manager.get_classes()
         txt = self.search_input.text().lower()
         jahr_filter = self.filter_jahr.currentText()
@@ -1046,11 +1046,9 @@ class KlassenTab(BaseTab):
     def edit_klasse(self, kid):
         self.show_popup("Info", f"Bearbeiten-Funktion für {kid} folgt in Kürze.")
 
-    # --- MUSTAFA DEMIRAL (Sprint 5): Warnmeldung für die neue Kaskaden-Löschung angepasst ---
     def delete_klasse(self, kid, kname):
         parts = kid.split('_')
-        if len(parts) < 2:
-            return
+        if len(parts) < 2: return
         name, jahr = parts[0], parts[1]
         msg = f"⚠️ Möchten Sie die Klasse '{kname}' wirklich löschen?\n\nACHTUNG: Dadurch werden auch alle zugeordneten Schüler unwiderruflich entfernt!"
 
@@ -1066,7 +1064,6 @@ class KlassenTab(BaseTab):
         self.show_popup("Info", "Import-Schnittstelle wird für MariaDB optimiert.")
 
 
-# --- LUIS OVERRATH (Sprint 3): Tab für die Verwaltung der Schuljahre ---
 class SchuljahrTab(BaseTab):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1108,8 +1105,7 @@ class SchuljahrTab(BaseTab):
         self.filter_table()
 
     def filter_table(self):
-        if not self.db_manager:
-            return
+        if not self.db_manager: return
         txt = self.search_input.text().lower()
         alle_jahre = self.db_manager.get_school_years()
         gefiltert = [j for j in alle_jahre if txt in str(j[1]).lower()]
@@ -1152,7 +1148,6 @@ class SchuljahrTab(BaseTab):
                 self.db_manager.add_school_year(name)
                 self.filter_table()
 
-    # --- MUSTAFA DEMIRAL (Sprint 5): Warnmeldung für die neue Kaskaden-Löschung angepasst ---
     def delete_jahr(self, jid, jahr_name):
         msg = f"⚠️ Möchten Sie das Schuljahr '{jahr_name}' wirklich löschen?\n\nACHTUNG: Dadurch werden auch ALLE Klassen und Schüler in diesem Jahr unwiderruflich entfernt!"
         if DeleteConfirmDialog(self, msg).exec() == QDialog.DialogCode.Accepted:
@@ -1168,19 +1163,197 @@ class SchuljahrTab(BaseTab):
 
 
 # ==============================================================================
+# PBI 10.3: BuchlistenTab (NEU - SPRINT 8)
+# ==============================================================================
+class BuchlistenTab(BaseTab):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.db_manager = parent.db_manager if parent else None
+
+        # --- OBERER BEREICH: KLASSEN-AUSWAHL ---
+        top_layout = QHBoxLayout()
+        lbl_klasse = QLabel("Buchliste bearbeiten für Klasse:")
+        lbl_klasse.setStyleSheet("color: #333333; font-weight: bold; font-size: 14px;")  # Dark-Mode Fix
+        top_layout.addWidget(lbl_klasse)
+
+        self.combo_klasse = QComboBox()
+        self.combo_klasse.setStyleSheet(self.input_style)
+        self.combo_klasse.setFixedWidth(250)
+        self.combo_klasse.currentTextChanged.connect(self.load_current_list)
+        top_layout.addWidget(self.combo_klasse)
+        top_layout.addStretch()
+        self.main_layout.addLayout(top_layout)
+
+        # --- MITTLERER BEREICH: DUAL LIST BOX ---
+        dual_list_layout = QHBoxLayout()
+
+        # Linke Liste (Alle Bücher)
+        left_layout = QVBoxLayout()
+        lbl_left = QLabel("Verfügbare Bücher (Alphabetisch):")
+        lbl_left.setStyleSheet("color: #333333; font-weight: bold; font-size: 14px;")  # Dark-Mode Fix
+        left_layout.addWidget(lbl_left)
+
+        self.list_all_books = QListWidget()
+        self.list_all_books.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.list_all_books.setStyleSheet(get_list_style())  # Dark-Mode Fix angewendet!
+        self.list_all_books.itemDoubleClicked.connect(self.add_book)
+        left_layout.addWidget(self.list_all_books)
+
+        # Mittlere Buttons (Pfeile)
+        btn_layout = QVBoxLayout()
+        btn_layout.addStretch()
+
+        self.btn_add = QPushButton("➔")
+        self.btn_add.setStyleSheet(get_btn_style("#F1BD4D"))
+        self.btn_add.setToolTip("Zur Klassenliste hinzufügen")
+        self.btn_add.clicked.connect(self.add_book)
+
+        self.btn_remove = QPushButton("←")
+        self.btn_remove.setStyleSheet(get_btn_style("#E0E0E0", "#333333"))
+        self.btn_remove.setToolTip("Aus Klassenliste entfernen")
+        self.btn_remove.clicked.connect(self.remove_book)
+
+        btn_layout.addWidget(self.btn_add)
+        btn_layout.addWidget(self.btn_remove)
+        btn_layout.addStretch()
+
+        # Rechte Liste (Ausgewählte Bücher)
+        right_layout = QVBoxLayout()
+        lbl_right = QLabel("Benötigte Bücher der Klasse:")
+        lbl_right.setStyleSheet("color: #333333; font-weight: bold; font-size: 14px;")  # Dark-Mode Fix
+        right_layout.addWidget(lbl_right)
+
+        self.list_class_books = QListWidget()
+        self.list_class_books.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.list_class_books.setStyleSheet(get_list_style())  # Dark-Mode Fix angewendet!
+        self.list_class_books.itemDoubleClicked.connect(self.remove_book)
+        right_layout.addWidget(self.list_class_books)
+
+        dual_list_layout.addLayout(left_layout, 2)
+        dual_list_layout.addLayout(btn_layout, 1)
+        dual_list_layout.addLayout(right_layout, 2)
+        self.main_layout.addLayout(dual_list_layout)
+
+        # --- UNTERER BEREICH: SPEICHERN ---
+        bottom_layout = QHBoxLayout()
+        bottom_layout.addStretch()
+        self.btn_save = QPushButton("💾 Buchliste speichern")
+        self.btn_save.setStyleSheet(get_btn_style("#5CB1D6"))
+        self.btn_save.clicked.connect(self.save_list)
+        bottom_layout.addWidget(self.btn_save)
+        self.main_layout.addLayout(bottom_layout)
+
+        # Initial laden
+        self.all_books_cache = {}  # ISBN als Key, "Titel (ISBN)" als Value
+        self.refresh_dropdown_and_books()
+
+    def refresh_dropdown_and_books(self):
+        """Lädt Klassen und Bücher frisch aus der Datenbank."""
+        if not self.db_manager: return
+
+        # 1. Klassen laden
+        self.combo_klasse.blockSignals(True)
+        self.combo_klasse.clear()
+        klassen = self.db_manager.get_classes()
+        for k in klassen:
+            self.combo_klasse.addItem(f"{k[1]} ({k[0]})", userData={"name": k[1], "jahr": k[0]})
+        self.combo_klasse.blockSignals(False)
+
+        # 2. Bücher laden
+        buecher = self.db_manager.get_books("", "Titel")
+        self.all_books_cache.clear()
+        for b in buecher:
+            isbn = str(b[0])
+            titel = str(b[1])
+            self.all_books_cache[isbn] = f"{titel} (ISBN: {isbn})"
+
+        self.load_current_list()
+
+    def load_current_list(self):
+        """Lädt die Buchliste der ausgewählten Klasse und graut linke Einträge aus."""
+        self.list_all_books.clear()
+        self.list_class_books.clear()
+
+        if self.combo_klasse.currentIndex() == -1: return
+
+        klasse_data = self.combo_klasse.currentData()
+        if not klasse_data: return
+
+        selected_isbns = self.db_manager.get_class_booklist(klasse_data["name"], klasse_data["jahr"])
+
+        sorted_books = sorted(self.all_books_cache.items(), key=lambda x: x[1])
+
+        for isbn, text in sorted_books:
+            item = QListWidgetItem(text)
+            item.setData(Qt.ItemDataRole.UserRole, isbn)
+
+            if isbn in selected_isbns:
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+                item.setForeground(QBrush(Qt.GlobalColor.gray))
+
+                right_item = QListWidgetItem(text)
+                right_item.setData(Qt.ItemDataRole.UserRole, isbn)
+                self.list_class_books.addItem(right_item)
+
+            self.list_all_books.addItem(item)
+
+    def add_book(self):
+        """Verschiebt ein Buch von Links nach Rechts."""
+        for item in self.list_all_books.selectedItems():
+            if not item.flags() & Qt.ItemFlag.ItemIsEnabled:
+                continue
+
+            isbn = item.data(Qt.ItemDataRole.UserRole)
+
+            right_item = QListWidgetItem(item.text())
+            right_item.setData(Qt.ItemDataRole.UserRole, isbn)
+            self.list_class_books.addItem(right_item)
+
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+            item.setForeground(QBrush(Qt.GlobalColor.gray))
+            item.setSelected(False)
+
+    def remove_book(self):
+        """Verschiebt ein Buch von Rechts nach Links."""
+        for right_item in self.list_class_books.selectedItems():
+            isbn = right_item.data(Qt.ItemDataRole.UserRole)
+
+            row = self.list_class_books.row(right_item)
+            self.list_class_books.takeItem(row)
+
+            for i in range(self.list_all_books.count()):
+                left_item = self.list_all_books.item(i)
+                if left_item.data(Qt.ItemDataRole.UserRole) == isbn:
+                    left_item.setFlags(left_item.flags() | Qt.ItemFlag.ItemIsEnabled)
+                    # Hier wurde auf System-Standardfarbe zurückgesetzt. Mac macht es weiß!
+                    # Wir lassen Qt.GlobalColor.black, weil unser Mac-Fix den Hintergrund auf Weiß erzwingt.
+                    left_item.setForeground(QBrush(Qt.GlobalColor.black))
+                    break
+
+    def save_list(self):
+        """Speichert die aktuelle rechte Liste in die Datenbank."""
+        if self.combo_klasse.currentIndex() == -1: return
+        klasse_data = self.combo_klasse.currentData()
+
+        isbns_to_save = []
+        for i in range(self.list_class_books.count()):
+            item = self.list_class_books.item(i)
+            isbns_to_save.append(item.data(Qt.ItemDataRole.UserRole))
+
+        success = self.db_manager.save_class_booklist(klasse_data["name"], klasse_data["jahr"], isbns_to_save)
+
+        if success:
+            self.show_popup("Erfolg", f"Buchliste für {klasse_data['name']} erfolgreich gespeichert!")
+        else:
+            self.show_popup("Fehler", "Beim Speichern ist ein Fehler aufgetreten.")
+
+
+# ==============================================================================
 # CONTAINER
 # ==============================================================================
-
-# --- AHMET TOPLAR (Sprint 2): Tab-Struktur für die Navigation zwischen Schüler, Klassen und Schuljahren ---
 class SchuelerverwaltungWidget(BasePageWidget):
     """
-    Container-Widget für Schüler-, Klassen- und Schuljahrverwaltung.
-
-    Refactoring:
-    - Das Widget erbt jetzt von BasePageWidget.
-    - Header, Breadcrumb, Seitentitel und Footer werden nicht mehr lokal
-      aufgebaut, sondern zentral bereitgestellt.
-    - Die Tab-Struktur bleibt erhalten und wird in self.content_layout eingefügt.
+    Container-Widget für Schüler-, Klassen-, Schuljahr- und Buchlistenverwaltung.
     """
     COLOR = "#F1BD4D"
 
@@ -1193,13 +1366,6 @@ class SchuelerverwaltungWidget(BasePageWidget):
         )
 
         self.db_manager = parent.db_manager if parent else None
-
-        # ----------------------------------------------------------------------
-        # Refactoring-Hinweis:
-        # - Header, Breadcrumb, Seitentitel und Footer werden jetzt zentral
-        #   von BasePageWidget aufgebaut.
-        # - Der tab-spezifische Inhalt wird nur noch hier ergänzt.
-        # ----------------------------------------------------------------------
 
         self.tabs = QTabWidget()
         self.tabs.tabBar().setDocumentMode(True)
@@ -1236,15 +1402,16 @@ class SchuelerverwaltungWidget(BasePageWidget):
         self.tab_schueler = SchuelerTab(self)
         self.tab_klassen = KlassenTab(self)
         self.tab_schuljahr = SchuljahrTab(self)
+        self.tab_buchlisten = BuchlistenTab(self)
 
         self.tabs.addTab(self.tab_schueler, "👨‍🎓 Schüler")
         self.tabs.addTab(self.tab_klassen, "🏫 Klassen")
         self.tabs.addTab(self.tab_schuljahr, "📅 Schuljahre")
+        self.tabs.addTab(self.tab_buchlisten, "📚 Buchlisten")
 
         self.tabs.currentChanged.connect(self.update_header_text)
         self.content_layout.addWidget(self.tabs)
 
-    # --- MUSTAFA DEMIRAL (Sprint 5): Automatisches Neu-Laden der Tabellen beim Tab-Wechsel ---
     def update_header_text(self, index):
         if index == 0:
             self.set_breadcrumb("Startseite > Hauptmenü > Schülerverwaltung > Schüler")
@@ -1259,3 +1426,7 @@ class SchuelerverwaltungWidget(BasePageWidget):
             self.set_breadcrumb("Startseite > Hauptmenü > Schülerverwaltung > Schuljahre")
             self.set_page_title("Schuljahrverwaltung")
             self.tab_schuljahr.filter_table()
+        elif index == 3:
+            self.set_breadcrumb("Startseite > Hauptmenü > Schülerverwaltung > Buchlisten")
+            self.set_page_title("Klassen-Buchlisten")
+            self.tab_buchlisten.refresh_dropdown_and_books()
