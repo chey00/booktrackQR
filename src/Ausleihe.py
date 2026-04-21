@@ -207,7 +207,9 @@ class AusleiheWidget(BasePageWidget):
 
         self.table_history = QTableWidget(0, 2)
         self.table_history.setHorizontalHeaderLabels(["ISBN", "Titel"])
-        self.table_history.setMaximumHeight(120)
+        # MAC-FIX: Tabellen-Minimumhöhe, damit sie nicht zusammengequetscht wird!
+        self.table_history.setMinimumHeight(120)
+        self.table_history.setMaximumHeight(150)
         self.table_history.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table_history.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
         self.table_history.setColumnWidth(0, 180)
@@ -266,6 +268,9 @@ class AusleiheWidget(BasePageWidget):
         self.table.verticalHeader().setDefaultSectionSize(60)
         self.table.setAlternatingRowColors(True)
         self.table.setShowGrid(True)
+        # MAC-FIX: Mindesthöhe für die Haupttabelle!
+        self.table.setMinimumHeight(280)
+
         self.table.setStyleSheet(f"""
             QTableWidget {{
                 background-color: #FFFFFF;
