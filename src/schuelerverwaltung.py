@@ -240,6 +240,7 @@ class CleanArchiveDialog(QDialog):
 # DIALOGE
 # ==============================================================================
 
+# --- AHMET TOPLAR (Sprint 2): Grundaufbau und UI-Elemente für den Schüler-Dialog ---
 class StudentDialog(QDialog):
     def __init__(self, parent=None, student_data=None):
         super().__init__(parent)
@@ -341,6 +342,7 @@ class StudentDialog(QDialog):
         else:
             self.id_prefix_label.setText("..._..._")
 
+    # --- AHMET TOPLAR (Sprint 2): Validierung der Pflichtfelder ---
     def validate_and_save(self):
         valid = True
 
@@ -362,6 +364,7 @@ class StudentDialog(QDialog):
             self.accept()
 
 
+# --- LUIS OVERRATH (Sprint 3): Dialog für die Erstellung und Bearbeitung von Klassen ---
 class KlassenDialog(QDialog):
     def __init__(self, parent=None, klassen_data=None):
         super().__init__(parent)
@@ -417,6 +420,7 @@ class KlassenDialog(QDialog):
         layout.addLayout(btn_layout)
 
 
+# --- LUIS OVERRATH (Sprint 3): Dialog für die Verwaltung der Schuljahre ---
 class SchuljahrDialog(QDialog):
     def __init__(self, parent=None, jahr_data=None):
         super().__init__(parent)
@@ -469,6 +473,7 @@ class SchuljahrDialog(QDialog):
 # TABS
 # ==============================================================================
 
+# --- AHMET TOPLAR (Sprint 2): Basis-Klasse für alle Tabs zur Vermeidung von Code-Duplikation ---
 class BaseTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -535,6 +540,7 @@ class BaseTab(QWidget):
         msg.exec()
 
 
+# --- AHMET TOPLAR (Sprint 2): Hauptansicht für Schüler mit Such- und Filterfunktion ---
 class SchuelerTab(BaseTab):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -760,6 +766,7 @@ class SchuelerTab(BaseTab):
                 f"Erfolgreich ausgeführt!\n\nEs wurden {deleted_count} inaktive Schüler dauerhaft aus der Datenbank gelöscht."
             )
 
+    # --- LUIS OVERRATH (Sprint 3): Basis CSV & Excel Import-Logik für Schüler ---
     # --- MUSTAFA DEMIRAL (Sprint 5): Intelligenter Import greift IDs ab und fängt Duplikate lautlos ab, ohne abzustürzen ---
     def import_students(self):
         file_path, _ = QFileDialog.getOpenFileName(
@@ -898,6 +905,7 @@ class SchuelerTab(BaseTab):
             self.show_popup("Achtung", f"Der Import wurde abgebrochen:\n\n{e}")
 
 
+# --- LUIS OVERRATH (Sprint 3): Implementierung der Klassen- und Schuljahrverwaltung ---
 class KlassenTab(BaseTab):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1058,6 +1066,7 @@ class KlassenTab(BaseTab):
         self.show_popup("Info", "Import-Schnittstelle wird für MariaDB optimiert.")
 
 
+# --- LUIS OVERRATH (Sprint 3): Tab für die Verwaltung der Schuljahre ---
 class SchuljahrTab(BaseTab):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1161,6 +1170,8 @@ class SchuljahrTab(BaseTab):
 # ==============================================================================
 # CONTAINER
 # ==============================================================================
+
+# --- AHMET TOPLAR (Sprint 2): Tab-Struktur für die Navigation zwischen Schüler, Klassen und Schuljahren ---
 class SchuelerverwaltungWidget(BasePageWidget):
     """
     Container-Widget für Schüler-, Klassen- und Schuljahrverwaltung.
