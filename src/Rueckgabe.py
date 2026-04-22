@@ -102,10 +102,19 @@ class RueckgabeWidget(BasePageWidget):
         msg.setWindowTitle(title)
         msg.setText(text)
         msg.setIcon(icon)
+
         if is_question:
+            # Standard-Buttons hinzufügen
             msg.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            # Deutsche Texte zuweisen (Korrekt über button())
+            msg.button(QMessageBox.StandardButton.Yes).setText("Ja")
+            msg.button(QMessageBox.StandardButton.No).setText("Nein")
+        else:
+            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+            msg.button(QMessageBox.StandardButton.Ok).setText("OK")
+
         msg.setStyleSheet(
-            "QLabel{ color: black; font-weight: bold; } QPushButton{ color: black; background-color: #eee; padding: 5px; } QMessageBox{ background-color: white; }")
+            "QLabel{ color: black; font-weight: bold; } QPushButton{ color: black; background-color: #eee; padding: 5px; min-width: 60px; } QMessageBox{ background-color: white; }")
         return msg.exec()
 
     def open_student_scanner(self):
@@ -143,7 +152,6 @@ class RueckgabeWidget(BasePageWidget):
         scanner = UniversalQRScanner(self, target_mode="BOOK", color_theme=self.COLOR_RED)
 
         if scanner.exec() == QDialog.DialogCode.Accepted and scanner.final_result:
-            # Extrahiere den gescannten Code
             res = scanner.final_result
             scanned_code = str(
                 res.get('book_code') or res.get('qr_code') or res.get('id') or next(iter(res.values()), "")).strip()
@@ -151,25 +159,20 @@ class RueckgabeWidget(BasePageWidget):
             if not scanned_code:
                 return
 
-            # SCHRITT 2: Code sofort in das Textfeld schreiben
             self.in_book.setText(scanned_code)
 
-            # Suchen, ob das Buch in der Liste der Ausleihen dieses Schülers existiert
             found_book = next((loan for loan in self.active_loans if str(loan[0]).strip() == scanned_code), None)
 
             if found_book:
-                # Buch ist hinterlegt -> Abfrage zur Rückgabe
                 isbn, titel = str(found_book[0]), str(found_book[1])
                 frage = f"Soll die Rückgabe von '{titel}' (ISBN: {isbn}) bestätigt werden?\n\nHat der Schüler das Buch abgegeben?"
                 if self.show_message('Rückgabe bestätigen', frage, QMessageBox.Icon.Question,
                                      True) == QMessageBox.StandardButton.Yes:
                     self.execute_deletion(isbn)
             else:
-                # Buch ist nicht in der Liste des Schülers -> Fehlermeldung wie gewünscht
                 self.show_message("Rückgabe fehlgeschlagen",
                                   "Dieses Buch gehört nicht dem Schüler.",
                                   QMessageBox.Icon.Critical)
-                # Textfeld leeren, da das Buch nicht gültig für diesen Schüler ist
                 self.in_book.clear()
 
     def manual_delete_confirm(self, isbn, titel):
