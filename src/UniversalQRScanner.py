@@ -7,7 +7,7 @@
 # ------------------------------------------------------------------------------
 
 import cv2
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel
+from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QMessageBox
 from PyQt6.QtCore import Qt, QTimer
 from database_manager import DatabaseManager
 
@@ -31,6 +31,24 @@ class UniversalQRScanner(QDialog):
 
         # Kamera-Initialisierung
         self.cap = cv2.VideoCapture(0)
+
+        # --- NEU: macOS Sicherheits-Check --- Daniel Popp
+        if not self.cap.isOpened():
+            msg = QMessageBox(self)
+
+            msg.setStyleSheet(
+                "QMessageBox { background-color: #FFFFFF; } QLabel { color: #000000; font-size: 14px; } QPushButton { color: #000000; background-color: #E0E0E0; border-radius: 5px; padding: 5px 15px; }")
+
+            msg.setIcon(QMessageBox.Icon.Information)
+            msg.setWindowTitle("Kamera-Zugriff")
+            msg.setText("Kamera wird initialisiert oder ist durch macOS blockiert.")
+            msg.setInformativeText(
+                "Falls macOS gerade nach der Berechtigung gefragt hat: Bitte klicken Sie auf 'Erlauben' und starten Sie den Scanner danach einfach noch einmal.")
+            msg.exec()
+            QTimer.singleShot(0, self.reject)
+            return
+        # ------------------------------------
+
         self.detector = cv2.QRCodeDetector()
 
         # Timer fuer fluesssiges Kamerabild (30 FPS)
@@ -117,6 +135,9 @@ class UniversalQRScanner(QDialog):
         self.accept()
 
     def closeEvent(self, event):
-        self.timer.stop()
-        self.cap.release()
+        # Sicherstellen, dass hasattr gecheckt wird, falls der Timer nie gestartet wurde
+        if hasattr(self, 'timer') and self.timer.isActive():
+            self.timer.stop()
+        if hasattr(self, 'cap') and self.cap.isOpened():
+            self.cap.release()
         super().closeEvent(event)

@@ -8,6 +8,7 @@
 import cv2
 import re
 import zxingcpp
+from PyQt6.QtWidgets import QMessageBox
 
 # Globale Variable, um den Maus-Klick zu registrieren
 abbruch_geklickt = False
@@ -28,6 +29,22 @@ def scan_and_return_isbn():
     abbruch_geklickt = False  # Beim Start immer zurücksetzen
 
     cap = cv2.VideoCapture(0)
+
+    # --- NEU: macOS Sicherheits-Check --- Daniel Popp
+    if not cap.isOpened():
+        msg = QMessageBox()
+        msg.setStyleSheet(
+            "QMessageBox { background-color: #FFFFFF; } QLabel { color: #000000; font-size: 14px; } QPushButton { color: #000000; background-color: #E0E0E0; border-radius: 5px; padding: 5px 15px; }")
+
+        msg.setIcon(QMessageBox.Icon.Information)
+        msg.setWindowTitle("Kamera-Zugriff")
+        msg.setText("Kamera wird initialisiert oder ist durch macOS blockiert.")
+        msg.setInformativeText(
+            "Falls macOS gerade nach der Berechtigung gefragt hat: Bitte klicken Sie auf 'Erlauben' und starten Sie den Scanner danach einfach noch einmal.")
+        msg.exec()
+        cap.release()
+        return None
+    # ------------------------------------
 
     # Fenster initialisieren und Maus-Überwachung aktivieren
     fenster_name = "BooktrackQR - Scanner"
@@ -78,7 +95,7 @@ def scan_and_return_isbn():
             except Exception:
                 pass
 
-                # Zahlen filtern (falls unsichtbare Sonderzeichen dabei sind)
+            # Zahlen filtern (falls unsichtbare Sonderzeichen dabei sind)
             clean_digits = re.sub(r'\D', '', raw_data)
 
             # FIX: Wir prüfen nur noch, ob die Nummer wie eine ISBN aussieht (13 Zahlen, beginnt mit 978/979)
@@ -114,4 +131,7 @@ def scan_and_return_isbn():
 
 
 if __name__ == "__main__":
+    from PyQt6.QtWidgets import QApplication
+    import sys
+    app = QApplication(sys.argv)
     print(f"Gescannt: {scan_and_return_isbn()}")
