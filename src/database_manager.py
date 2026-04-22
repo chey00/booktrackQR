@@ -4,7 +4,7 @@
 # Autoren: René Bezold, Denis Sukkau, Georg Zinn
 # Sprint 4: Mustafa Demiral (Intelligente Get-or-Create DB Logik & ID-Handling)
 # Sprint 5: Mustafa Demiral (Soft-Delete & Admin-Löschung für Schüler)
-# Sprint 8: Datenbank-Befehle für die Ausleihe hinzugefügt
+# Sprint 8: Datenbank-Befehle für Ausleihe & PBI 10.3.1 (Klassen-Buchlisten) von Mustafa Demiral & Ahmet Toplar
 # Zweck: Zentrale Schnittstelle zur MariaDB auf dem Raspberry Pi.
 # ------------------------------------------------------------------------------
 
@@ -28,6 +28,9 @@ class DatabaseManager:
         port_env = os.getenv("DB_PORT", "3306")
         self.port = int(port_env) if port_env.isdigit() else 3306
 
+        # Automatische Tabellen-Erstellung beim Start (PBI 10.3.1)
+        self.setup_buchlisten_table()
+
     def _get_connection(self):
         return pymysql.connect(
             host=self.host,
@@ -37,6 +40,89 @@ class DatabaseManager:
             port=self.port,
             autocommit=True
         )
+
+    # ==============================================================================
+    # PBI 10.3.1: KLASSEN-BUCHLISTEN (n:m Beziehung) - Mustafa & Ahmet (Sprint 8)
+    # ==============================================================================
+    def setup_buchlisten_table(self):
+        """Erstellt die Verknüpfungstabelle für die Buchlisten (MariaDB kompatibel)."""
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                               CREATE TABLE IF NOT EXISTS KlassenBuchliste
+                               (
+                                   klasse_name
+                                   VARCHAR
+                               (
+                                   100
+                               ),
+                                   schuljahr VARCHAR
+                               (
+                                   50
+                               ),
+                                   isbn VARCHAR
+                               (
+                                   50
+                               ),
+                                   PRIMARY KEY
+                               (
+                                   klasse_name,
+                                   schuljahr,
+                                   isbn
+                               )
+                                   )
+                               """)
+        except Exception as e:
+            print(f"Fehler beim Erstellen der Buchlisten-Tabelle: {e}")
+        finally:
+            conn.close()
+
+    def save_class_booklist(self, klasse, jahr, isbn_list):
+        """Speichert die komplette Buchliste für eine Klasse."""
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cursor:
+                # 1. Alte Liste der Klasse komplett löschen (verhindert Duplikate)
+                cursor.execute("""
+                               DELETE
+                               FROM KlassenBuchliste
+                               WHERE klasse_name = %s
+                                 AND schuljahr = %s
+                               """, (klasse, jahr))
+
+                # 2. Neue Liste einfügen
+                for isbn in isbn_list:
+                    cursor.execute("""
+                                   INSERT INTO KlassenBuchliste (klasse_name, schuljahr, isbn)
+                                   VALUES (%s, %s, %s)
+                                   """, (klasse, jahr, isbn))
+            return True
+        except Exception as e:
+            print(f"Fehler beim Speichern der Buchliste: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def get_class_booklist(self, klasse, jahr):
+        """Gibt eine Liste aller ISBNs zurück, die die Klasse benötigt."""
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                               SELECT isbn
+                               FROM KlassenBuchliste
+                               WHERE klasse_name = %s
+                                 AND schuljahr = %s
+                               """, (klasse, jahr))
+                return [row[0] for row in cursor.fetchall()]
+        except Exception as e:
+            print(f"Fehler beim Laden der Buchliste: {e}")
+            return []
+        finally:
+            conn.close()
+
+    # ==============================================================================
 
     # --- MUSTAFA DEMIRAL: Sichere Automatik-Funktionen für den Import ---
     def get_or_create_school_year(self, jahr_text):
@@ -212,7 +298,6 @@ class DatabaseManager:
             db_id, nachname, vorname, klasse, jahr, status = row
             safe_jahr = str(jahr).replace('/', '-')
 
-            # MUSTAFA DEMIRAL: Modulo 10000 liefert die saubere 001-Nummer (z.B. aus 30015 wird 015)
             display_id = db_id % 10000
             formatted_id = f"{klasse}_{safe_jahr}_{display_id:03d}"
 
@@ -249,7 +334,6 @@ class DatabaseManager:
         finally:
             conn.close()
 
-    # MUSTAFA DEMIRAL (Sprint 5): Setzt Schüler auf 'INAKTIV' (Soft-Delete Archivierung).
     def deactivate_student(self, student_id):
         conn = self._get_connection()
         try:
@@ -266,7 +350,6 @@ class DatabaseManager:
         finally:
             conn.close()
 
-    # MUSTAFA DEMIRAL (Sprint 5): Leert das Archiv (löscht alle inaktiven Schüler endgültig).
     def delete_all_inactive_students(self):
         conn = self._get_connection()
         try:
@@ -292,7 +375,6 @@ class DatabaseManager:
         finally:
             conn.close()
 
-    # MUSTAFA DEMIRAL (Sprint 4/5): Mathematischer ID-Trick (Klassen-ID * 10000 + Schüler-ID) für feste, konfliktfreie IDs beim Import.
     def add_student(self, nachname, vorname, klasse, schuljahr, manual_id=None):
         klasse_id = self.get_or_create_class(klasse, schuljahr)
         conn = self._get_connection()
@@ -321,7 +403,6 @@ class DatabaseManager:
         finally:
             conn.close()
 
-    # MUSTAFA DEMIRAL (Sprint 4/5): Berechnet ID bei Änderungen neu (wichtig beim Klassenwechsel).
     def update_student(self, student_id, nachname, vorname, klasse, schuljahr, manual_id=None):
         klasse_id = self.get_or_create_class(klasse, schuljahr)
         conn = self._get_connection()
@@ -365,7 +446,6 @@ class DatabaseManager:
         except:
             return False
 
-    # MUSTAFA DEMIRAL (Sprint 5): Kaskaden-Löschung mit FOREIGN_KEY_CHECKS = 0, um MySQL Fehler 1451 (Constraints) restlos zu umgehen.
     def delete_class(self, klasse_name, jahr_text):
         conn = self._get_connection()
         try:
@@ -380,7 +460,6 @@ class DatabaseManager:
                 res = cursor.fetchone()
                 if res:
                     kid = res[0]
-                    # Löscht evtl. vorhandene Buch-Ausleihen, damit keine Leichen bleiben
                     cursor.execute(
                         "DELETE FROM Ausleihe_Aktuell WHERE studierende_id IN (SELECT studierende_id FROM Studierende WHERE schulklasse_id = %s)",
                         (kid,))
@@ -398,17 +477,9 @@ class DatabaseManager:
         except:
             return False
 
-    # --- ERGAENZUNG JACLYN BARTA (Sprint 5 Erweiterung): UNIVERSAL SCANNER SUPPORT ---
-
     def get_student_by_qr_id(self, qr_id):
-        """
-        Sucht einen Schueler anhand der formatierten ID (z.B. MB_2024-25_015).
-        Beruecksichtigt Mustafas neue Modulo-Logik fuer die display_id.
-        """
-        # Nutzt Mustafas Logik aus get_students, um die ID (db_id % 10000) zu matchen
         all_students = self.get_students()
         for s in all_students:
-            # s[5] ist die berechnete formatted_id (z.B. MB_2024-25_015)
             if s[5] == qr_id:
                 return {
                     "db_id": s[0],
@@ -421,7 +492,6 @@ class DatabaseManager:
         return None
 
     def get_book_by_qr_data(self, isbn):
-        """Prueft Buch-Existenz fuer den Scanner (Jaclyn Barta)"""
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
@@ -435,14 +505,9 @@ class DatabaseManager:
             conn.close()
 
     def get_current_loaner(self, isbn):
-        """
-        PBI Erfuellung: Prueft Verfuegbarkeit und liefert Entleiher-Namen.
-        Wichtig fuer die Warnmeldung im Kamerabild bei der Ausleihe.
-        """
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
-                # GEFIXT: Verknüpfung über e.isbn = t.isbn (statt titel_id)
                 sql = """
                       SELECT s.vorname, s.nachname
                       FROM Ausleihe_Aktuell a
@@ -460,7 +525,6 @@ class DatabaseManager:
         finally:
             conn.close()
 
-    # MUSTAFA DEMIRAL (Sprint 5): Vollständige Kaskaden-Löschung des Schuljahres (inkl. Klassen, Schüler, Ausleihen) durch FK-Override.
     def delete_school_year(self, jid):
         conn = self._get_connection()
         try:
@@ -484,14 +548,7 @@ class DatabaseManager:
                 cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
             conn.close()
 
-    # ==============================================================================
-    # NEU (SPRINT 8): Methoden für die Ausleihe
-    # ==============================================================================
-
     def get_active_loans_for_student(self, qr_id):
-        """
-        Holt alle aktuell ausgeliehenen Bücher für einen Schüler.
-        """
         student_info = self.get_student_by_qr_id(qr_id)
         if not student_info:
             return []
@@ -500,23 +557,13 @@ class DatabaseManager:
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
-                # GEFIXT: Verknüpfung über e.isbn = t.isbn (statt titel_id)
-                sql = """
-                      SELECT t.isbn, t.titel
-                      FROM Ausleihe_Aktuell a
-                               JOIN BuchExemplar e ON a.exemplar_id = e.exemplar_id
-                               JOIN BuchTitel t ON e.isbn = t.isbn
-                      WHERE a.studierende_id = %s \
-                      """
+                sql = "SELECT isbn, titel FROM v_studierende_ausleihen WHERE studierende_id = %s"
                 cursor.execute(sql, (real_db_id,))
                 return cursor.fetchall()
         finally:
             conn.close()
 
     def add_loan(self, qr_id, isbn):
-        """
-        Verknüpft einen Schüler mit einem verfügbaren Buch-Exemplar und speichert die Ausleihe.
-        """
         student_info = self.get_student_by_qr_id(qr_id)
         if not student_info:
             raise Exception("Schüler-ID konnte in der Datenbank nicht aufgelöst werden.")
@@ -526,7 +573,6 @@ class DatabaseManager:
 
         try:
             with conn.cursor() as cursor:
-                # 1. Ein freies Exemplar dieses Buchs suchen
                 sql_find_free = """
                                 SELECT exemplar_id
                                 FROM BuchExemplar
@@ -541,7 +587,6 @@ class DatabaseManager:
 
                 free_exemplar_id = result[0]
 
-                # 2. Die Ausleihe eintragen (GEFIXT: Ohne 'ausleihdatum')
                 sql_insert = """
                              INSERT INTO Ausleihe_Aktuell (studierende_id, exemplar_id)
                              VALUES (%s, %s) \
@@ -556,29 +601,7 @@ class DatabaseManager:
         finally:
             conn.close()
 
-# ==============================================================================
-    # NEU (User Story): Methoden für Ausleihe und Rückgabe
-    # ==============================================================================
-
-    def get_active_loans_for_student(self, qr_id):
-        """Holt alle aktuell ausgeliehenen Bücher für einen Schüler (SQL zentral)."""
-        student_info = self.get_student_by_qr_id(qr_id)
-        if not student_info:
-            return []
-
-        real_db_id = student_info["db_id"]
-        conn = self._get_connection()
-        try:
-            with conn.cursor() as cursor:
-                # SQL-Abfrage über die View
-                sql = "SELECT isbn, titel FROM v_studierende_ausleihen WHERE studierende_id = %s"
-                cursor.execute(sql, (real_db_id,))
-                return cursor.fetchall()
-        finally:
-            conn.close()
-
     def return_book_by_isbn(self, qr_id, isbn):
-        """Regelt die Rückgabe (Löschen aus Ausleihe_Aktuell) via SQL."""
         student_info = self.get_student_by_qr_id(qr_id)
         if not student_info:
             return False
@@ -587,12 +610,12 @@ class DatabaseManager:
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
-                # Sub-Select löst das Problem der fehlenden ISBN-Spalte in Ausleihe_Aktuell
                 sql = """
-                    DELETE FROM Ausleihe_Aktuell 
-                    WHERE studierende_id = %s 
-                    AND exemplar_id IN (SELECT exemplar_id FROM BuchExemplar WHERE isbn = %s)
-                """
+                      DELETE \
+                      FROM Ausleihe_Aktuell
+                      WHERE studierende_id = %s
+                        AND exemplar_id IN (SELECT exemplar_id FROM BuchExemplar WHERE isbn = %s) \
+                      """
                 cursor.execute(sql, (real_db_id, isbn))
                 return cursor.rowcount > 0
         finally:
