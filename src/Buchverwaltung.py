@@ -118,7 +118,7 @@ def input_style(accent_color: str) -> str:
             border: 1px solid #CCCCCC;
             border-radius: {BUTTON_RADIUS}px;
             background-color: #FFFFFF;
-            color: #333333;
+            color: #000000;
             font-size: 14px;
         }}
         QLineEdit:hover {{
@@ -141,7 +141,7 @@ def combo_style(accent_color: str) -> str:
             border: 1px solid #CCCCCC;
             border-radius: {BUTTON_RADIUS}px;
             background-color: #FFFFFF;
-            color: #333333;
+            color: #000000;
             font-size: 14px;
         }}
         QComboBox:hover {{
@@ -215,7 +215,7 @@ class DeleteConfirmDialog(QDialog):
         self.label = QLabel("⚠️ Möchten Sie dieses Buch wirklich\nunwiderruflich löschen?")
         self.label.setFont(QFont("Open Sans", 11, QFont.Weight.Bold))
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.label.setStyleSheet("color: #333333; margin-bottom: 10px;")
+        self.label.setStyleSheet("color: #000000; margin-bottom: 10px;")
         layout.addWidget(self.label)
 
         # Buttons: Abbrechen / Löschen
@@ -245,22 +245,31 @@ class BookDialog(QDialog):
         super().__init__(parent)
 
         self.setWindowTitle("Neues Buch" if not book_data else "Buch bearbeiten")
-        self.setFixedSize(420, 340)
+
+        # MAC-FIX: Dialog deutlich breiter gemacht, damit alles reinpasst!
+        self.setFixedSize(550, 420)
 
         # Grund-Stylesheet für Dialog + Eingabefelder
+        # MAC-FIX: Farbe hart auf Schwarz (#000000) forciert, plus QToolTip Fix!
         self.setStyleSheet(f"""
-            QDialog {{ background-color: #FFFFFF; }}
-            QLabel {{ color: #333333; font-weight: bold; }}
+            QDialog {{ background-color: #FFFFFF; color: #000000; }}
+            QLabel {{ color: #000000; font-weight: bold; font-size: 14px; }}
             QLineEdit {{
                 background-color: #FFFFFF;
                 border: 1px solid #CCCCCC;
                 border-radius: {BUTTON_RADIUS}px;
-                padding: 8px;
-                color: #333333;
+                padding: 10px;
+                color: #000000;
                 font-size: 14px;
             }}
             QLineEdit:hover {{ border: 1px solid #999999; }}
             QLineEdit:focus {{ border: 2px solid #5CB1D6; }}
+            QLineEdit::placeholder {{ color: #888888; }}
+            QToolTip {{ 
+                color: #000000; 
+                background-color: #F8F9FA; 
+                border: 1px solid #CCCCCC; 
+            }}
         """)
 
         layout = QVBoxLayout(self)
@@ -275,11 +284,12 @@ class BookDialog(QDialog):
 
         self.input_isbn = QLineEdit()
         self.input_isbn.setPlaceholderText("ISBN eingeben")
+        self.input_isbn.setFixedWidth(335)  # Zwingt das Feld, breit zu sein!
 
         self.btn_scan = QPushButton("📷")
-        self.btn_scan.setFixedSize(32, 32)
+        self.btn_scan.setFixedSize(35, 35)
         self.btn_scan.setStyleSheet(f"""
-            QPushButton {{ background-color: #E0E0E0; border: 1px solid #CCCCCC; border-radius: {BUTTON_RADIUS}px; font-size: 16px; }}
+            QPushButton {{ background-color: #E0E0E0; color: #000000; border: 1px solid #CCCCCC; border-radius: {BUTTON_RADIUS}px; font-size: 16px; }}
             QPushButton:hover {{ background-color: #5CB1D6; color: white; border: 1px solid #5CB1D6; }}
         """)
         self.btn_scan.setToolTip("ISBN scannen & Daten automatisch ausfüllen")
@@ -287,19 +297,24 @@ class BookDialog(QDialog):
 
         isbn_layout.addWidget(self.input_isbn)
         isbn_layout.addWidget(self.btn_scan)
+        isbn_layout.addStretch()
         # ----------------------------------------------------
 
         self.input_title = QLineEdit()
         self.input_title.setPlaceholderText("Titel eingeben")
+        self.input_title.setFixedWidth(380)  # Zwingt das Feld, breit zu sein!
 
         self.input_publisher = QLineEdit()
         self.input_publisher.setPlaceholderText("Verlag eingeben")
+        self.input_publisher.setFixedWidth(380)
 
         self.input_edition = QLineEdit()
         self.input_edition.setPlaceholderText("Auflage eingeben")
+        self.input_edition.setFixedWidth(380)
 
         self.input_stock = QLineEdit()
         self.input_stock.setPlaceholderText("Bestand (Zahl)")
+        self.input_stock.setFixedWidth(380)
 
         # Fehlermeldung (standardmäßig versteckt)
         self.error_label = QLabel("Bitte alle markierten Pflichtfelder (*) ausfüllen.")
@@ -313,11 +328,11 @@ class BookDialog(QDialog):
             self.input_isbn.setReadOnly(True)  # ISBN bleibt fix
             self.input_isbn.setStyleSheet(f"""
                 QLineEdit {{
-                    background:#F3F3F3;
+                    background-color: #F3F3F3;
                     border: 1px solid #CCCCCC;
                     border-radius: {BUTTON_RADIUS}px;
-                    padding: 8px;
-                    color: #333333;
+                    padding: 10px;
+                    color: #000000;
                     font-size: 14px;
                 }}
             """)
@@ -364,23 +379,28 @@ class BookDialog(QDialog):
     # --- SCANNER & API LOGIK (Mustafa & Ahmet) ---
     def trigger_camera_scan(self):
         self.btn_scan.setText("⏳")
+        QApplication.processEvents()
 
-        # 1. TRICK FÜR MAC: Fenster nicht "löschen" (hide), sondern 100% durchsichtig machen.
-        self.setWindowOpacity(0.0)
-        QApplication.processEvents()  # Zwingt die GUI, sofort unsichtbar zu werden
+        # MAC-FIX: Wir parken das Fenster kurzzeitig weit außerhalb des sichtbaren Bereichs!
+        # So entgehen wir allen Grafik-Bugs und das Fenster blockiert die Kamera nicht mehr.
+        alte_position = self.pos()
+        self.move(-10000, -10000)
+        QApplication.processEvents()
 
-        # 2. Kamera starten
+        # Kamera starten
         scanned_isbn = scan_and_return_isbn()
 
-        # 3. Dialogfenster wieder sichtbar machen und in den Vordergrund holen
-        self.setWindowOpacity(1.0)
+        # Fenster sofort wieder zurück an die alte Position holen
+        self.move(alte_position)
         self.raise_()
         self.activateWindow()
         self.btn_scan.setText("📷")
 
         if scanned_isbn:
             self.input_isbn.setText(scanned_isbn)
-            self.input_isbn.setStyleSheet(f"border: 2px solid #4CAF50; border-radius: {BUTTON_RADIUS}px; padding: 8px;")
+            # MAC-FIX: Immer color und background-color mitgeben, damit es nicht weiß wird!
+            self.input_isbn.setStyleSheet(
+                f"background-color: #FFFFFF; color: #000000; border: 2px solid #4CAF50; border-radius: {BUTTON_RADIUS}px; padding: 10px;")
 
             # 4. API Abfrage mit Verzögerung, damit die GUI nicht einfriert
             QTimer.singleShot(100, lambda: self.fetch_book_data_from_api(scanned_isbn))
@@ -400,11 +420,22 @@ class BookDialog(QDialog):
 
                     title = volume_info.get("title", "")
                     publisher = volume_info.get("publisher", "")
-                    published_date = volume_info.get("publishedDate", "")
-                    year = published_date[:4] if published_date else ""
+
+                    # WICHTIG: NEUE AUFLAGEN-LOGIK (PBI Fix)
+                    edition = volume_info.get("edition", "")  # Manche API-Treffer haben ein echtes 'edition' Feld
+
+                    # Falls keine echte 'edition' gefunden wurde, im Titel/Untertitel danach suchen
+                    if not edition:
+                        full_title = f"{title} {volume_info.get('subtitle', '')}"
+                        # Sucht nach Mustern wie "3. Auflage", "4th Edition", etc.
+                        match = re.search(r'(\d+)\.\s*Auflage', full_title, re.IGNORECASE)
+                        if match:
+                            edition = match.group(1)
+
+                    # Wir ignorieren das publishedDate jetzt komplett für die Auflage!
 
                     if title:  # Wenn Google etwas gefunden hat, tragen wir es ein und brechen ab
-                        self._apply_api_data(title, publisher, year)
+                        self._apply_api_data(title, publisher, edition)
                         return
         except Exception as e:
             print(f"Fehler bei Google API: {e}")
@@ -424,13 +455,13 @@ class BookDialog(QDialog):
                     publishers = book_info.get("publishers", [])
                     publisher = publishers[0].get("name", "") if publishers else ""
 
-                    # Jahr formatieren (OpenLibrary liefert oft "October 2019", wir wollen nur "2019")
-                    year_raw = book_info.get("publish_date", "")
-                    year_match = re.search(r'\d{4}', year_raw) if year_raw else None
-                    year = year_match.group(0) if year_match else year_raw
+                    # WICHTIG: NEUE AUFLAGEN-LOGIK
+                    # OpenLibrary hat oft kein sauberes Auflagen-Feld, wir übergeben hier bewusst einen leeren String (""),
+                    # damit der Nutzer gezwungen ist, das Feld manuell auszufüllen.
+                    edition = ""
 
                     if title:  # Wenn OpenLibrary etwas gefunden hat
-                        self._apply_api_data(title, publisher, year)
+                        self._apply_api_data(title, publisher, edition)
                         return
         except Exception as e:
             print(f"Fehler bei OpenLibrary API: {e}")
@@ -440,20 +471,32 @@ class BookDialog(QDialog):
         self.input_title.setPlaceholderText("Nicht gefunden - Bitte manuell tippen")
         self.input_publisher.setPlaceholderText("Nicht gefunden - Bitte manuell tippen")
 
-    def _apply_api_data(self, title, publisher, year):
+    def _apply_api_data(self, title, publisher, edition):
         """Hilfsfunktion, um die Felder grün zu markieren und zu füllen."""
+        # MAC-FIX: Immer color und background-color mitgeben!
+        success_style = f"background-color: #FFFFFF; color: #000000; border: 2px solid #4CAF50; border-radius: {BUTTON_RADIUS}px; padding: 10px;"
+
         if title:
             self.input_title.setText(title)
-            self.input_title.setStyleSheet(
-                f"border: 2px solid #4CAF50; border-radius: {BUTTON_RADIUS}px; padding: 8px;")
+            self.input_title.setStyleSheet(success_style)
         if publisher:
             self.input_publisher.setText(publisher)
-            self.input_publisher.setStyleSheet(
-                f"border: 2px solid #4CAF50; border-radius: {BUTTON_RADIUS}px; padding: 8px;")
-        if year:
-            self.input_edition.setText(year)
-            self.input_edition.setStyleSheet(
-                f"border: 2px solid #4CAF50; border-radius: {BUTTON_RADIUS}px; padding: 8px;")
+            self.input_publisher.setStyleSheet(success_style)
+        if edition:
+            self.input_edition.setText(edition)
+            self.input_edition.setStyleSheet(success_style)
+        else:
+            # Falls die API keine echte Auflage gefunden hat, bleibt das Feld leer,
+            # wird aber nicht grün markiert, um dem Nutzer zu signalisieren: "Hier musst du ran!"
+            self.input_edition.clear()
+            self.input_edition.setPlaceholderText("Bitte Auflage manuell eintragen")
+            self.input_edition.setStyleSheet(f"""
+                background-color: #FFFFFF;
+                color: #000000;
+                border: 1px solid #CCCCCC;
+                border-radius: {BUTTON_RADIUS}px;
+                padding: 10px;
+            """)
 
     # ---------------------------------------------
 
@@ -470,11 +513,13 @@ class BookDialog(QDialog):
         e = self.input_edition.text().strip()
         s = self.input_stock.text().strip()
 
-        # Reset Rahmen (falls vorher Fehler)
+        # MAC-FIX: Immer color und background-color mitgeben!
         default_style = f"""
+            background-color: #FFFFFF;
+            color: #000000;
             border: 1px solid #CCCCCC;
             border-radius: {BUTTON_RADIUS}px;
-            padding: 8px;
+            padding: 10px;
         """
         self.input_isbn.setStyleSheet(default_style)
         self.input_title.setStyleSheet(default_style)
@@ -482,25 +527,24 @@ class BookDialog(QDialog):
         self.input_edition.setStyleSheet(default_style)
         self.input_stock.setStyleSheet(default_style)
 
+        # MAC-FIX: Für Fehler-Felder auch!
+        error_style = f"background-color: #FFFFFF; color: #000000; border: 2px solid #D32F2F; border-radius: {BUTTON_RADIUS}px; padding: 10px;"
+
         ok = True
         if not isbn:
-            self.input_isbn.setStyleSheet(f"border: 2px solid #D32F2F; border-radius: {BUTTON_RADIUS}px; padding: 8px;")
+            self.input_isbn.setStyleSheet(error_style)
             ok = False
         if not t:
-            self.input_title.setStyleSheet(
-                f"border: 2px solid #D32F2F; border-radius: {BUTTON_RADIUS}px; padding: 8px;")
+            self.input_title.setStyleSheet(error_style)
             ok = False
         if not p:
-            self.input_publisher.setStyleSheet(
-                f"border: 2px solid #D32F2F; border-radius: {BUTTON_RADIUS}px; padding: 8px;")
+            self.input_publisher.setStyleSheet(error_style)
             ok = False
         if not e:
-            self.input_edition.setStyleSheet(
-                f"border: 2px solid #D32F2F; border-radius: {BUTTON_RADIUS}px; padding: 8px;")
+            self.input_edition.setStyleSheet(error_style)
             ok = False
         if not s or not s.isdigit():
-            self.input_stock.setStyleSheet(
-                f"border: 2px solid #D32F2F; border-radius: {BUTTON_RADIUS}px; padding: 8px;")
+            self.input_stock.setStyleSheet(error_style)
             ok = False
 
         if not ok:
@@ -586,7 +630,7 @@ class BuchverwaltungWidget(BasePageWidget):
                 border-radius: 12px;
                 gridline-color: #EDEDED;
                 font-size: 15px;
-                color: #333333;
+                color: #000000;
             }}
             QHeaderView::section {{
                 background-color: #F0F0F0;
@@ -663,7 +707,7 @@ class BuchverwaltungWidget(BasePageWidget):
         lbl_stock = QLabel(str(stock))
         lbl_stock.setFixedWidth(50)
         lbl_stock.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl_stock.setStyleSheet("font-size: 15px; font-weight: bold; color: #333333; background: transparent;")
+        lbl_stock.setStyleSheet("font-size: 15px; font-weight: bold; color: #000000; background: transparent;")
 
         btn_plus = QPushButton("+")
         btn_plus.setFixedSize(35, 35)
