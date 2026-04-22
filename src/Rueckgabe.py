@@ -1,23 +1,15 @@
 # ------------------------------------------------------------------------------
 # Projekt: BooktrackQR
-# Modul: RückgabeWidget (Finales Design + Fix für NameError & Schrift)
-# Datei: Rueckgabe.py
+# Modul: RückgabeWidget (QR-Erkennung mit validierter Rückmeldung)
 # ------------------------------------------------------------------------------
 
 import os
 import platform
-from datetime import datetime
-
-# --- SYSTEM-FIX FÜR MACOS (ZBAR LIBRARY) ---
-if platform.system() == "Darwin":
-    os.environ["DYLD_LIBRARY_PATH"] = "/opt/homebrew/lib"
-
 from PyQt6.QtWidgets import (
     QPushButton, QLabel, QHBoxLayout, QTableWidget, QTableWidgetItem,
     QHeaderView, QLineEdit, QMessageBox, QDialog, QVBoxLayout, QWidget
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont
 
 # Eigene Module
 from base_page import BasePageWidget
@@ -43,6 +35,7 @@ class RueckgabeWidget(BasePageWidget):
 
         self.db_manager = DatabaseManager()
         self.current_student_qr_id = None
+        self.active_loans = []
         self.setup_gui()
 
     def setup_gui(self):
@@ -69,7 +62,7 @@ class RueckgabeWidget(BasePageWidget):
         # --- 2. BUCH-SCAN BEREICH ---
         b_layout = QHBoxLayout()
         self.in_book = QLineEdit()
-        self.in_book.setPlaceholderText("Buch scannen zum Rückgeben...")
+        self.in_book.setPlaceholderText("Buch-QR-Code scannen...")
         self.in_book.setStyleSheet(
             "padding:12px; border:1px solid #CCC; border-radius:8px; color: #000000; font-size: 14px; background: white;")
         self.in_book.setReadOnly(True)
@@ -80,13 +73,12 @@ class RueckgabeWidget(BasePageWidget):
         self.btn_scan_b.clicked.connect(self.open_book_scanner)
 
         b_layout.addWidget(self.in_book, 4)
-        # HIER WAR DER FEHLER: self.btn_scan_b statt btn_scan_b
         b_layout.addWidget(self.btn_scan_b, 2)
         self.content_layout.addLayout(b_layout)
 
         # --- 3. TABELLE ---
         self.table = QTableWidget(0, 3)
-        self.table.setHorizontalHeaderLabels(["ISBN", "Titel", "Aktion"])
+        self.table.setHorizontalHeaderLabels(["ISBN / QR", "Titel", "Aktion"])
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
@@ -129,40 +121,71 @@ class RueckgabeWidget(BasePageWidget):
             self.load_loans()
 
     def load_loans(self):
-        loans = self.db_manager.get_active_loans_for_student(self.current_student_qr_id)
-        self.table.setRowCount(len(loans))
-        for i, row in enumerate(loans):
+        self.active_loans = self.db_manager.get_active_loans_for_student(self.current_student_qr_id)
+        self.table.setRowCount(len(self.active_loans))
+        for i, row in enumerate(self.active_loans):
             isbn, titel = str(row[0]), str(row[1])
             it0, it1 = QTableWidgetItem(isbn), QTableWidgetItem(titel)
             it0.setForeground(Qt.GlobalColor.black)
             it1.setForeground(Qt.GlobalColor.black)
             self.table.setItem(i, 0, it0)
             self.table.setItem(i, 1, it1)
+
             btn_delete = QPushButton("Löschen")
             btn_delete.setStyleSheet(
                 "background-color: #E57368; color: white; border-radius: 4px; padding: 4px; font-weight: bold;")
-            btn_delete.clicked.connect(lambda checked, arg=isbn: self.manual_delete_confirm(arg))
+            btn_delete.clicked.connect(
+                lambda checked, arg_isbn=isbn, arg_titel=titel: self.manual_delete_confirm(arg_isbn, arg_titel))
             self.table.setCellWidget(i, 2, btn_delete)
 
     def open_book_scanner(self):
         if not UniversalQRScanner: return
         scanner = UniversalQRScanner(self, target_mode="BOOK", color_theme=self.COLOR_RED)
-        if scanner.exec() == QDialog.DialogCode.Accepted and scanner.final_result:
-            isbn = scanner.final_result.get('isbn') or scanner.final_result.get('book_code')
-            self.execute_deletion(isbn)
 
-    def manual_delete_confirm(self, isbn):
-        if self.show_message('Bestätigung', f"Buch {isbn} wirklich löschen?", QMessageBox.Icon.Question,
+        if scanner.exec() == QDialog.DialogCode.Accepted and scanner.final_result:
+            # Extrahiere den gescannten Code
+            res = scanner.final_result
+            scanned_code = str(
+                res.get('book_code') or res.get('qr_code') or res.get('id') or next(iter(res.values()), "")).strip()
+
+            if not scanned_code:
+                return
+
+            # SCHRITT 2: Code sofort in das Textfeld schreiben
+            self.in_book.setText(scanned_code)
+
+            # Suchen, ob das Buch in der Liste der Ausleihen dieses Schülers existiert
+            found_book = next((loan for loan in self.active_loans if str(loan[0]).strip() == scanned_code), None)
+
+            if found_book:
+                # Buch ist hinterlegt -> Abfrage zur Rückgabe
+                isbn, titel = str(found_book[0]), str(found_book[1])
+                frage = f"Soll die Rückgabe von '{titel}' (ISBN: {isbn}) bestätigt werden?\n\nHat der Schüler das Buch abgegeben?"
+                if self.show_message('Rückgabe bestätigen', frage, QMessageBox.Icon.Question,
+                                     True) == QMessageBox.StandardButton.Yes:
+                    self.execute_deletion(isbn)
+            else:
+                # Buch ist nicht in der Liste des Schülers -> Fehlermeldung wie gewünscht
+                self.show_message("Rückgabe fehlgeschlagen",
+                                  "Dieses Buch gehört nicht dem Schüler.",
+                                  QMessageBox.Icon.Critical)
+                # Textfeld leeren, da das Buch nicht gültig für diesen Schüler ist
+                self.in_book.clear()
+
+    def manual_delete_confirm(self, isbn, titel):
+        frage = f"Soll das Buch '{titel}' wirklich von diesem Schüler zurückgegeben werden?"
+        if self.show_message('Manuelle Rückgabe', frage, QMessageBox.Icon.Question,
                              True) == QMessageBox.StandardButton.Yes:
             self.execute_deletion(isbn)
 
     def execute_deletion(self, isbn):
         if self.db_manager.return_book_by_isbn(self.current_student_qr_id, isbn):
-            self.show_message("Erfolg", f"Buch {isbn} zurückgegeben.")
+            self.show_message("Erfolg", f"Die Rückgabe wurde erfolgreich verbucht.")
             self.load_loans()
             self.in_book.clear()
         else:
-            self.show_message("Fehler", "Löschen fehlgeschlagen.", QMessageBox.Icon.Warning)
+            self.show_message("Fehler", "Der Datensatz konnte nicht in der Datenbank aktualisiert werden.",
+                              QMessageBox.Icon.Warning)
 
     def reset_view(self):
         self.in_student.clear();
@@ -172,6 +195,7 @@ class RueckgabeWidget(BasePageWidget):
         self.btn_scan_b.setEnabled(False);
         self.btn_scan_b.setStyleSheet(self.get_btn_style("#CCCCCC"))
         self.current_student_qr_id = None
+        self.active_loans = []
 
     def get_btn_style(self, color):
         return f"background-color: {color}; color: white; padding: 12px; font-weight: bold; border-radius: 8px;"
