@@ -6,6 +6,7 @@
 # Sprint 4 Autor: Mustafa Demiral (Dynamische ID-Kalkulation, Mac-Design-Fixes)
 # Sprint 5 Autor: Mustafa Demiral (Soft-Delete & Admin-Löschung für Schüler)
 # Sprint 8 Autoren: Mustafa Demiral, Ahmet Toplar (PBI 10.3 & 10.3.1: Buchlisten anlegen)
+# Sprint 9 Autor: Mustafa Demiral (PBI 11.6 & 11.9: Bugfixes Schülerbearbeitung & Validierung)
 # Stand: Soft-Delete implementiert, Mac-DarkMode-Fix für Listen integriert, Buchlisten-Tab integriert.
 #
 # Refactoring-Hinweis:
@@ -101,7 +102,6 @@ def get_input_style(accent_color="#F1BD4D"):
     """
 
 
-# Mac Dark-Mode Fix für QListWidget
 def get_list_style():
     return f"""
     QListWidget {{
@@ -114,19 +114,20 @@ def get_list_style():
     }}
     QListWidget::item {{
         padding: 8px;
+        color: #333333;
     }}
     QListWidget::item:selected {{
         background-color: #F1BD4D;
         color: #FFFFFF;
         border-radius: 5px;
     }}
-    QListWidget::item:hover {{
-        background-color: #F9F9F9;
+    QListWidget::item:hover:!selected {{
+        background-color: #E0E0E0;
+        color: #000000;
     }}
     """
 
 
-# --- Standard Dialog für Klassen und Jahre ---
 class DeleteConfirmDialog(QDialog):
     def __init__(self, parent=None, warning_text="⚠️ Möchten Sie diesen Datensatz wirklich\nunwiderruflich löschen?"):
         super().__init__(parent)
@@ -151,7 +152,6 @@ class DeleteConfirmDialog(QDialog):
         layout.addLayout(btn_layout)
 
 
-# --- MUSTAFA DEMIRAL (Sprint 5): Neuer Dialog für Schüler ---
 class StudentDeleteDialog(QDialog):
     def __init__(self, parent=None, student_name=""):
         super().__init__(parent)
@@ -213,7 +213,6 @@ class StudentDeleteDialog(QDialog):
             self.error_label.setText("Falsches Admin-Passwort! Löschen verweigert.")
 
 
-# --- MUSTAFA DEMIRAL (Sprint 5): Dialog Archiv leeren ---
 class CleanArchiveDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -265,7 +264,6 @@ class CleanArchiveDialog(QDialog):
 # DIALOGE
 # ==============================================================================
 
-# --- AHMET TOPLAR (Sprint 2): Schüler-Dialog ---
 class StudentDialog(QDialog):
     def __init__(self, parent=None, student_data=None):
         super().__init__(parent)
@@ -381,13 +379,23 @@ class StudentDialog(QDialog):
         valid &= check_field(self.combo_klasse, self.combo_klasse.currentText() == "Bitte wählen...")
         valid &= check_field(self.combo_jahr, self.combo_jahr.currentText() == "Bitte wählen...")
 
+        # =========================================================================
+        # BUGFIX PBI 11.9: Absturz verhindern, wenn Buchstaben in die ID getippt werden
+        # =========================================================================
+        manual_id = self.input_id.text().strip()
+        is_id_invalid = bool(manual_id) and not manual_id.isdigit()
+        valid &= check_field(self.input_id, is_id_invalid)
+
         if not valid:
+            if is_id_invalid:
+                self.error_label.setText("Die ID-Nummer darf nur aus Zahlen bestehen!")
+            else:
+                self.error_label.setText("Bitte alle markierten Pflichtfelder (*) ausfüllen.")
             self.error_label.show()
         else:
             self.accept()
 
 
-# --- LUIS OVERRATH (Sprint 3): Klassen Dialog ---
 class KlassenDialog(QDialog):
     def __init__(self, parent=None, klassen_data=None):
         super().__init__(parent)
@@ -443,7 +451,6 @@ class KlassenDialog(QDialog):
         layout.addLayout(btn_layout)
 
 
-# --- LUIS OVERRATH (Sprint 3): Schuljahr Dialog ---
 class SchuljahrDialog(QDialog):
     def __init__(self, parent=None, jahr_data=None):
         super().__init__(parent)
@@ -657,7 +664,6 @@ class SchuelerTab(BaseTab):
     def load_table_data(self, data_list):
         self.table.setRowCount(len(data_list))
 
-        # MUSTAFA DEMIRAL (Sprint 4): Transparente Hintergründe und Hover-Effekte für Mac-Kompatibilität in der Tabelle
         btn_edit_style = f"""
             QPushButton {{
                 background: transparent;
@@ -752,7 +758,11 @@ class SchuelerTab(BaseTab):
                 jahr = d.combo_jahr.currentText()
                 manual_id = d.input_id.text().strip()
 
-                success = self.db_manager.update_student(sid, nachname, vorname, klasse, jahr, manual_id)
+                # =========================================================================
+                # BUGFIX PBI 11.6: int(sid) zwingt Python dazu, einen sauberen Integer
+                # zum Vergleich an die Datenbank zu senden (verhindert ID-Vergabe Fehler)
+                # =========================================================================
+                success = self.db_manager.update_student(int(sid), nachname, vorname, klasse, jahr, manual_id)
                 if success:
                     self.refresh_data()
                 else:
@@ -1162,18 +1172,14 @@ class SchuljahrTab(BaseTab):
         self.show_popup("Info", "Import-Funktion wird vorbereitet.")
 
 
-# ==============================================================================
-# PBI 10.3: BuchlistenTab (NEU - SPRINT 8)
-# ==============================================================================
 class BuchlistenTab(BaseTab):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.db_manager = parent.db_manager if parent else None
 
-        # --- OBERER BEREICH: KLASSEN-AUSWAHL ---
         top_layout = QHBoxLayout()
         lbl_klasse = QLabel("Buchliste bearbeiten für Klasse:")
-        lbl_klasse.setStyleSheet("color: #333333; font-weight: bold; font-size: 14px;")  # Dark-Mode Fix
+        lbl_klasse.setStyleSheet("color: #333333; font-weight: bold; font-size: 14px;")
         top_layout.addWidget(lbl_klasse)
 
         self.combo_klasse = QComboBox()
@@ -1184,22 +1190,19 @@ class BuchlistenTab(BaseTab):
         top_layout.addStretch()
         self.main_layout.addLayout(top_layout)
 
-        # --- MITTLERER BEREICH: DUAL LIST BOX ---
         dual_list_layout = QHBoxLayout()
 
-        # Linke Liste (Alle Bücher)
         left_layout = QVBoxLayout()
         lbl_left = QLabel("Verfügbare Bücher (Alphabetisch):")
-        lbl_left.setStyleSheet("color: #333333; font-weight: bold; font-size: 14px;")  # Dark-Mode Fix
+        lbl_left.setStyleSheet("color: #333333; font-weight: bold; font-size: 14px;")
         left_layout.addWidget(lbl_left)
 
         self.list_all_books = QListWidget()
         self.list_all_books.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self.list_all_books.setStyleSheet(get_list_style())  # Dark-Mode Fix angewendet!
+        self.list_all_books.setStyleSheet(get_list_style())
         self.list_all_books.itemDoubleClicked.connect(self.add_book)
         left_layout.addWidget(self.list_all_books)
 
-        # Mittlere Buttons (Pfeile)
         btn_layout = QVBoxLayout()
         btn_layout.addStretch()
 
@@ -1217,15 +1220,14 @@ class BuchlistenTab(BaseTab):
         btn_layout.addWidget(self.btn_remove)
         btn_layout.addStretch()
 
-        # Rechte Liste (Ausgewählte Bücher)
         right_layout = QVBoxLayout()
         lbl_right = QLabel("Benötigte Bücher der Klasse:")
-        lbl_right.setStyleSheet("color: #333333; font-weight: bold; font-size: 14px;")  # Dark-Mode Fix
+        lbl_right.setStyleSheet("color: #333333; font-weight: bold; font-size: 14px;")
         right_layout.addWidget(lbl_right)
 
         self.list_class_books = QListWidget()
         self.list_class_books.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self.list_class_books.setStyleSheet(get_list_style())  # Dark-Mode Fix angewendet!
+        self.list_class_books.setStyleSheet(get_list_style())
         self.list_class_books.itemDoubleClicked.connect(self.remove_book)
         right_layout.addWidget(self.list_class_books)
 
@@ -1234,7 +1236,6 @@ class BuchlistenTab(BaseTab):
         dual_list_layout.addLayout(right_layout, 2)
         self.main_layout.addLayout(dual_list_layout)
 
-        # --- UNTERER BEREICH: SPEICHERN ---
         bottom_layout = QHBoxLayout()
         bottom_layout.addStretch()
         self.btn_save = QPushButton("💾 Buchliste speichern")
@@ -1243,15 +1244,11 @@ class BuchlistenTab(BaseTab):
         bottom_layout.addWidget(self.btn_save)
         self.main_layout.addLayout(bottom_layout)
 
-        # Initial laden
-        self.all_books_cache = {}  # ISBN als Key, "Titel (ISBN)" als Value
+        self.all_books_cache = {}
         self.refresh_dropdown_and_books()
 
     def refresh_dropdown_and_books(self):
-        """Lädt Klassen und Bücher frisch aus der Datenbank."""
         if not self.db_manager: return
-
-        # 1. Klassen laden
         self.combo_klasse.blockSignals(True)
         self.combo_klasse.clear()
         klassen = self.db_manager.get_classes()
@@ -1259,89 +1256,66 @@ class BuchlistenTab(BaseTab):
             self.combo_klasse.addItem(f"{k[1]} ({k[0]})", userData={"name": k[1], "jahr": k[0]})
         self.combo_klasse.blockSignals(False)
 
-        # 2. Bücher laden
         buecher = self.db_manager.get_books("", "Titel")
         self.all_books_cache.clear()
         for b in buecher:
             isbn = str(b[0])
             titel = str(b[1])
             self.all_books_cache[isbn] = f"{titel} (ISBN: {isbn})"
-
         self.load_current_list()
 
     def load_current_list(self):
-        """Lädt die Buchliste der ausgewählten Klasse und graut linke Einträge aus."""
         self.list_all_books.clear()
         self.list_class_books.clear()
-
         if self.combo_klasse.currentIndex() == -1: return
-
         klasse_data = self.combo_klasse.currentData()
         if not klasse_data: return
 
         selected_isbns = self.db_manager.get_class_booklist(klasse_data["name"], klasse_data["jahr"])
-
         sorted_books = sorted(self.all_books_cache.items(), key=lambda x: x[1])
 
         for isbn, text in sorted_books:
             item = QListWidgetItem(text)
             item.setData(Qt.ItemDataRole.UserRole, isbn)
-
             if isbn in selected_isbns:
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
                 item.setForeground(QBrush(Qt.GlobalColor.gray))
-
                 right_item = QListWidgetItem(text)
                 right_item.setData(Qt.ItemDataRole.UserRole, isbn)
                 self.list_class_books.addItem(right_item)
-
             self.list_all_books.addItem(item)
 
     def add_book(self):
-        """Verschiebt ein Buch von Links nach Rechts."""
         for item in self.list_all_books.selectedItems():
-            if not item.flags() & Qt.ItemFlag.ItemIsEnabled:
-                continue
-
+            if not item.flags() & Qt.ItemFlag.ItemIsEnabled: continue
             isbn = item.data(Qt.ItemDataRole.UserRole)
-
             right_item = QListWidgetItem(item.text())
             right_item.setData(Qt.ItemDataRole.UserRole, isbn)
             self.list_class_books.addItem(right_item)
-
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
             item.setForeground(QBrush(Qt.GlobalColor.gray))
             item.setSelected(False)
 
     def remove_book(self):
-        """Verschiebt ein Buch von Rechts nach Links."""
         for right_item in self.list_class_books.selectedItems():
             isbn = right_item.data(Qt.ItemDataRole.UserRole)
-
             row = self.list_class_books.row(right_item)
             self.list_class_books.takeItem(row)
-
             for i in range(self.list_all_books.count()):
                 left_item = self.list_all_books.item(i)
                 if left_item.data(Qt.ItemDataRole.UserRole) == isbn:
                     left_item.setFlags(left_item.flags() | Qt.ItemFlag.ItemIsEnabled)
-                    # Hier wurde auf System-Standardfarbe zurückgesetzt. Mac macht es weiß!
-                    # Wir lassen Qt.GlobalColor.black, weil unser Mac-Fix den Hintergrund auf Weiß erzwingt.
                     left_item.setForeground(QBrush(Qt.GlobalColor.black))
                     break
 
     def save_list(self):
-        """Speichert die aktuelle rechte Liste in die Datenbank."""
         if self.combo_klasse.currentIndex() == -1: return
         klasse_data = self.combo_klasse.currentData()
-
         isbns_to_save = []
         for i in range(self.list_class_books.count()):
             item = self.list_class_books.item(i)
             isbns_to_save.append(item.data(Qt.ItemDataRole.UserRole))
-
         success = self.db_manager.save_class_booklist(klasse_data["name"], klasse_data["jahr"], isbns_to_save)
-
         if success:
             self.show_popup("Erfolg", f"Buchliste für {klasse_data['name']} erfolgreich gespeichert!")
         else:
