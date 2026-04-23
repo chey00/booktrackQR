@@ -3,7 +3,6 @@
 # Modul: AusleiheWidget (GUI Design & Sprint-Demo)
 # Datei: Ausleihe.py
 #
-#
 # Autoren: Batuhan Aktürk & Daniel Popp (Entstanden im Pair Programming)
 #
 # Stand (Epic 8):
@@ -240,7 +239,7 @@ class AusleiheWidget(BasePageWidget):
         book_area.setSpacing(10)
 
         self.in_book = QLineEdit()
-        self.in_book.setPlaceholderText("ISBN eingeben oder scannen...")
+        self.in_book.setPlaceholderText("Buch-ID eingeben oder scannen...")
         self.in_book.setFixedWidth(400)
         self.in_book.setStyleSheet(input_style(self.COLOR))
         self.in_book.setEnabled(False)
@@ -368,7 +367,7 @@ class AusleiheWidget(BasePageWidget):
             parent=self,
             target_mode="STUDENT",
             color_theme=self.COLOR,
-            context_text="Schülerausweis scannen"
+            context_text="Schuelerausweis scannen"
         )
 
         if scanner.exec() == QDialog.DialogCode.Accepted:
