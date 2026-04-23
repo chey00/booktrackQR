@@ -8,6 +8,11 @@
 # - Batuhan: BuchverwaltungWidget (Layout, Tabelle, Sortierung, Bestand +/- , Aktionen)
 # - René + Georg + Denis: Integration Lade-Indikator & Fehlerbehandlung
 #
+# Ahmet Toplar (Bugfixes & Features):
+# - PBI 11.10: Fenster breiter gemacht & Kamera-Symbol im Bearbeitungsmodus entfernt
+# - PBI 11.11: Manuellen "Daten suchen"-Button (🔄) ergänzt
+# - PBI 11.12: Pop-up Fenster bei doppelter ISBN eingebaut (Pro Design)
+#
 # Refactoring-Hinweis:
 # - Header, Breadcrumb, Seitentitel und Footer werden jetzt zentral
 #   über BasePageWidget bereitgestellt.
@@ -20,7 +25,8 @@ import re  # Import für Datums-Extraktion
 from PyQt6.QtWidgets import (
     QPushButton, QVBoxLayout, QLabel, QHBoxLayout,
     QTableWidget, QTableWidgetItem, QHeaderView, QLineEdit,
-    QDialog, QFormLayout, QComboBox, QWidget, QApplication
+    QDialog, QFormLayout, QComboBox, QWidget, QApplication,
+    QMessageBox  # Hinzugefügt für das Pop-up Fenster
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont
@@ -239,8 +245,10 @@ class DeleteConfirmDialog(QDialog):
 # ==============================================================================
 # Harun, Mustafa & Ahmet: BookDialog (Integriert mit Barcode-Scanner & Auto-Fill)
 # Zweck: Dialog zum "Buch hinzufügen" und "Buch bearbeiten"
-# Ahmet Bugs bearbeitet: Fenster breiter gemacht und Kamera Symbol bei Bearbeitung entfernt
-
+#
+# Ahmet Toplar (Bugfixes & Features):
+# - PBI 11.10: Fenster breiter gemacht & Kamera-Symbol im Bearbeitungsmodus entfernt
+# - PBI 11.11: Manuellen "Daten suchen"-Button (🔄) ergänzt
 # ==============================================================================
 class BookDialog(QDialog):
     def __init__(self, parent=None, book_data=None):
@@ -248,9 +256,11 @@ class BookDialog(QDialog):
 
         self.setWindowTitle("Neues Buch" if not book_data else "Buch bearbeiten")
 
-        # PBI 11.10 & 11.11: Fenster auf x 2,5 Breite vergrößert
+        # PBI 11.10: Dialog deutlich breiter gemacht, damit alles reinpasst!
         self.setFixedSize(850, 420)
 
+        # Grund-Stylesheet für Dialog + Eingabefelder
+        # MAC-FIX: Farbe hart auf Schwarz (#000000) forciert, plus QToolTip Fix!
         self.setStyleSheet(f"""
             QDialog {{ background-color: #FFFFFF; color: #000000; }}
             QLabel {{ color: #000000; font-weight: bold; font-size: 14px; }}
@@ -265,58 +275,91 @@ class BookDialog(QDialog):
             QLineEdit:hover {{ border: 1px solid #999999; }}
             QLineEdit:focus {{ border: 2px solid #5CB1D6; }}
             QLineEdit::placeholder {{ color: #888888; }}
+            QToolTip {{ 
+                color: #000000; 
+                background-color: #F8F9FA; 
+                border: 1px solid #CCCCCC; 
+            }}
         """)
 
         layout = QVBoxLayout(self)
+
+        # FormLayout -> Label links, Eingabefeld rechts
         form_layout = QFormLayout()
         form_layout.setSpacing(15)
 
-        # --- ISBN Feld + Kamera Button ---
+        # --- ISBN Feld + Kamera Button (Mustafa & Ahmet) ---
         isbn_layout = QHBoxLayout()
         isbn_layout.setContentsMargins(0, 0, 0, 0)
 
         self.input_isbn = QLineEdit()
         self.input_isbn.setPlaceholderText("ISBN eingeben")
-        self.input_isbn.setFixedWidth(600)
 
-        isbn_layout.addWidget(self.input_isbn)
-
-        # Kamera nur beim Hinzufügen anzeigen
+        # PBI 11.10 & 11.11 Fix: Dynamische Breite für das ISBN-Feld
         if not book_data:
+            self.input_isbn.setFixedWidth(600)  # Kürzer, damit die Kamera Platz hat
+
             self.btn_scan = QPushButton("📷")
             self.btn_scan.setFixedSize(35, 35)
-            self.btn_scan.setStyleSheet(
-                f"QPushButton {{ background-color: #E0E0E0; border-radius: {BUTTON_RADIUS}px; }}")
-            self.btn_scan.setToolTip("ISBN scannen")
+            self.btn_scan.setStyleSheet(f"""
+                QPushButton {{ background-color: #E0E0E0; color: #000000; border: 1px solid #CCCCCC; border-radius: {BUTTON_RADIUS}px; font-size: 16px; }}
+                QPushButton:hover {{ background-color: #5CB1D6; color: white; border: 1px solid #5CB1D6; }}
+            """)
+            self.btn_scan.setToolTip("ISBN scannen & Daten automatisch ausfüllen")
             self.btn_scan.clicked.connect(self.trigger_camera_scan)
+
+            isbn_layout.addWidget(self.input_isbn)
             isbn_layout.addWidget(self.btn_scan)
+        else:
+            self.input_isbn.setFixedWidth(650)  # Volle Breite, da keine Kamera im Bearbeitungsmodus
+            isbn_layout.addWidget(self.input_isbn)
 
         isbn_layout.addStretch()
+        # ----------------------------------------------------
 
-        # Eingabefelder Breite anpassen
         self.input_title = QLineEdit()
-        self.input_title.setFixedWidth(650)
+        self.input_title.setPlaceholderText("Titel eingeben")
+        self.input_title.setFixedWidth(650)  # Zwingt das Feld, breit zu sein!
+
         self.input_publisher = QLineEdit()
+        self.input_publisher.setPlaceholderText("Verlag eingeben")
         self.input_publisher.setFixedWidth(650)
+
         self.input_edition = QLineEdit()
+        self.input_edition.setPlaceholderText("Auflage eingeben")
         self.input_edition.setFixedWidth(650)
+
         self.input_stock = QLineEdit()
+        self.input_stock.setPlaceholderText("Bestand (Zahl)")
         self.input_stock.setFixedWidth(650)
 
+        # Fehlermeldung (standardmäßig versteckt)
         self.error_label = QLabel("Bitte alle markierten Pflichtfelder (*) ausfüllen.")
-        self.error_label.setStyleSheet("color: #D32F2F; font-size: 12px;")
+        self.error_label.setStyleSheet("color: #D32F2F; font-size: 12px; font-style: italic; font-weight: normal;")
         self.error_label.hide()
 
+        # Bearbeitungsmodus: bestehende Daten in Felder laden
         if book_data:
+            # book_data: (isbn, titel, verlag, auflage, bestand)
             self.input_isbn.setText(book_data[0])
-            self.input_isbn.setReadOnly(True)
-            self.input_isbn.setStyleSheet(
-                f"background-color: #F3F3F3; border: 1px solid #CCCCCC; border-radius: {BUTTON_RADIUS}px; padding: 10px; color: #000000;")
+            self.input_isbn.setReadOnly(True)  # ISBN bleibt fix
+            self.input_isbn.setStyleSheet(f"""
+                QLineEdit {{
+                    background-color: #F3F3F3;
+                    border: 1px solid #CCCCCC;
+                    border-radius: {BUTTON_RADIUS}px;
+                    padding: 10px;
+                    color: #000000;
+                    font-size: 14px;
+                }}
+            """)
+
             self.input_title.setText(book_data[1])
             self.input_publisher.setText(book_data[2])
             self.input_edition.setText(book_data[3])
             self.input_stock.setText(str(book_data[4]))
 
+        # Pflichtfelder mit * markiert
         form_layout.addRow(QLabel("ISBN*:"), isbn_layout)
         form_layout.addRow(QLabel("Titel*:"), self.input_title)
         form_layout.addRow(QLabel("Verlag*:"), self.input_publisher)
@@ -327,13 +370,15 @@ class BookDialog(QDialog):
         layout.addWidget(self.error_label)
         layout.addStretch()
 
-        # --- Aktionsbuttons (PBI 11.11: 3. Button hinzufügen) ---
+        # Aktionsbuttons: Abbrechen / Speichern
         btn_layout = QHBoxLayout()
 
+        # PBI 11.11: Der neue "Nach Daten suchen" Button
         if not book_data:
             self.btn_fetch = QPushButton("🔄 Daten suchen")
-            self.btn_fetch.setFixedWidth(160)
+            self.btn_fetch.setFixedWidth(180)
             self.btn_fetch.setStyleSheet(neutral_button_style())
+            self.btn_fetch.setToolTip("Sucht online nach Buchdaten zur eingegebenen ISBN")
             self.btn_fetch.clicked.connect(self.manual_api_fetch)
             btn_layout.addWidget(self.btn_fetch)
 
@@ -341,9 +386,12 @@ class BookDialog(QDialog):
 
         self.btn_cancel = QPushButton("Abbrechen")
         self.btn_save = QPushButton("Speichern")
+
+        # Button-Styles (Grau / Blau)
         self.btn_cancel.setStyleSheet(neutral_button_style())
         self.btn_save.setStyleSheet(primary_button_style("#5CB1D6"))
 
+        # Dialog-Steuerung
         self.btn_cancel.clicked.connect(self.reject)
         self.btn_save.clicked.connect(self.validate_and_save)
 
@@ -351,36 +399,54 @@ class BookDialog(QDialog):
         btn_layout.addWidget(self.btn_save)
         layout.addLayout(btn_layout)
 
+    # PBI 11.11: Manuelle Suche
     def manual_api_fetch(self):
-        """Logik für den neuen 🔄 Button"""
         isbn = self.input_isbn.text().strip()
         if isbn:
             self.fetch_book_data_from_api(isbn)
         else:
             self.input_isbn.setStyleSheet(
-                "border: 2px solid #D32F2F; padding: 10px; border-radius: 10px; background: #FFFFFF; color: #000000;")
-            self.error_label.setText("Bitte erst eine ISBN eingeben.")
+                f"background-color: #FFFFFF; color: #000000; border: 2px solid #D32F2F; border-radius: {BUTTON_RADIUS}px; padding: 10px;")
+            self.error_label.setText("Bitte erst eine ISBN eingeben, um Daten zu suchen.")
             self.error_label.show()
 
+    # --- SCANNER & API LOGIK (Mustafa & Ahmet) ---
     def trigger_camera_scan(self):
-        if hasattr(self, 'btn_scan'): self.btn_scan.setText("⏳")
+        if hasattr(self, 'btn_scan'):
+            self.btn_scan.setText("⏳")
         QApplication.processEvents()
-        alte_pos = self.pos()
+
+        # MAC-FIX: Wir parken das Fenster kurzzeitig weit außerhalb des sichtbaren Bereichs!
+        # So entgehen wir allen Grafik-Bugs und das Fenster blockiert die Kamera nicht mehr.
+        alte_position = self.pos()
         self.move(-10000, -10000)
         QApplication.processEvents()
+
+        # Kamera starten
         scanned_isbn = scan_and_return_isbn()
-        self.move(alte_pos)
+
+        # Fenster sofort wieder zurück an die alte Position holen
+        self.move(alte_position)
         self.raise_()
         self.activateWindow()
-        if hasattr(self, 'btn_scan'): self.btn_scan.setText("📷")
+
+        if hasattr(self, 'btn_scan'):
+            self.btn_scan.setText("📷")
+
         if scanned_isbn:
             self.input_isbn.setText(scanned_isbn)
+            # MAC-FIX: Immer color und background-color mitgeben, damit es nicht weiß wird!
             self.input_isbn.setStyleSheet(
                 f"background-color: #FFFFFF; color: #000000; border: 2px solid #4CAF50; border-radius: {BUTTON_RADIUS}px; padding: 10px;")
+
+            # 4. API Abfrage mit Verzögerung, damit die GUI nicht einfriert
             QTimer.singleShot(100, lambda: self.fetch_book_data_from_api(scanned_isbn))
 
     def fetch_book_data_from_api(self, isbn):
+        """Holt Buchdaten von Google Books oder OpenLibrary als Fallback."""
         clean_isbn = isbn.replace("-", "").strip()
+
+        # --- 1. VERSUCH: Google Books API ---
         google_url = f"https://www.googleapis.com/books/v1/volumes?q=isbn:{clean_isbn}"
         try:
             response = requests.get(google_url, timeout=5)
@@ -388,19 +454,30 @@ class BookDialog(QDialog):
                 data = response.json()
                 if "items" in data and len(data["items"]) > 0:
                     volume_info = data["items"][0].get("volumeInfo", {})
+
                     title = volume_info.get("title", "")
                     publisher = volume_info.get("publisher", "")
-                    edition = volume_info.get("edition", "")
+
+                    # WICHTIG: NEUE AUFLAGEN-LOGIK (PBI Fix)
+                    edition = volume_info.get("edition", "")  # Manche API-Treffer haben ein echtes 'edition' Feld
+
+                    # Falls keine echte 'edition' gefunden wurde, im Titel/Untertitel danach suchen
                     if not edition:
                         full_title = f"{title} {volume_info.get('subtitle', '')}"
+                        # Sucht nach Mustern wie "3. Auflage", "4th Edition", etc.
                         match = re.search(r'(\d+)\.\s*Auflage', full_title, re.IGNORECASE)
-                        if match: edition = match.group(1)
-                    if title:
+                        if match:
+                            edition = match.group(1)
+
+                    # Wir ignorieren das publishedDate jetzt komplett für die Auflage!
+
+                    if title:  # Wenn Google etwas gefunden hat, tragen wir es ein und brechen ab
                         self._apply_api_data(title, publisher, edition)
                         return
-        except:
-            pass
+        except Exception as e:
+            print(f"Fehler bei Google API: {e}")
 
+        # --- 2. VERSUCH: OpenLibrary API (Wenn Google das Buch nicht kennt) ---
         openlib_url = f"https://openlibrary.org/api/books?bibkeys=ISBN:{clean_isbn}&jscmd=data&format=json"
         try:
             response = requests.get(openlib_url, timeout=5)
@@ -410,45 +487,107 @@ class BookDialog(QDialog):
                 if key in data:
                     book_info = data[key]
                     title = book_info.get("title", "")
+
+                    # Verlage kommen bei OpenLibrary als Liste
                     publishers = book_info.get("publishers", [])
-                    pub_name = publishers[0].get("name", "") if publishers else ""
-                    if title:
-                        self._apply_api_data(title, pub_name, "")
+                    publisher = publishers[0].get("name", "") if publishers else ""
+
+                    # WICHTIG: NEUE AUFLAGEN-LOGIK
+                    # OpenLibrary hat oft kein sauberes Auflagen-Feld, wir übergeben hier bewusst einen leeren String (""),
+                    # damit der Nutzer gezwungen ist, das Feld manuell auszufüllen.
+                    edition = ""
+
+                    if title:  # Wenn OpenLibrary etwas gefunden hat
+                        self._apply_api_data(title, publisher, edition)
                         return
-        except:
-            pass
+        except Exception as e:
+            print(f"Fehler bei OpenLibrary API: {e}")
+
+        # --- 3. WENN BEIDE DATENBANKEN DAS BUCH NICHT KENNEN ---
+        print("Buch in keinen APIs gefunden (Weder Google noch OpenLibrary).")
+        self.input_title.setPlaceholderText("Nicht gefunden - Bitte manuell tippen")
+        self.input_publisher.setPlaceholderText("Nicht gefunden - Bitte manuell tippen")
 
     def _apply_api_data(self, title, publisher, edition):
-        style = f"background-color: #FFFFFF; color: #000000; border: 2px solid #4CAF50; border-radius: {BUTTON_RADIUS}px; padding: 10px;"
+        """Hilfsfunktion, um die Felder grün zu markieren und zu füllen."""
+        # MAC-FIX: Immer color und background-color mitgeben!
+        success_style = f"background-color: #FFFFFF; color: #000000; border: 2px solid #4CAF50; border-radius: {BUTTON_RADIUS}px; padding: 10px;"
+
         if title:
             self.input_title.setText(title)
-            self.input_title.setStyleSheet(style)
+            self.input_title.setStyleSheet(success_style)
         if publisher:
             self.input_publisher.setText(publisher)
-            self.input_publisher.setStyleSheet(style)
+            self.input_publisher.setStyleSheet(success_style)
         if edition:
             self.input_edition.setText(edition)
-            self.input_edition.setStyleSheet(style)
+            self.input_edition.setStyleSheet(success_style)
+        else:
+            # Falls die API keine echte Auflage gefunden hat, bleibt das Feld leer,
+            # wird aber nicht grün markiert, um dem Nutzer zu signalisieren: "Hier musst du ran!"
+            self.input_edition.clear()
+            self.input_edition.setPlaceholderText("Bitte Auflage manuell eintragen")
+            self.input_edition.setStyleSheet(f"""
+                background-color: #FFFFFF;
+                color: #000000;
+                border: 1px solid #CCCCCC;
+                border-radius: {BUTTON_RADIUS}px;
+                padding: 10px;
+            """)
+
+    # ---------------------------------------------
 
     def validate_and_save(self):
+        """
+        Validierung:
+        - ISBN, Titel, Verlag, Auflage dürfen nicht leer sein
+        - Bestand muss eine Zahl sein
+        - Bei Fehler: rote Rahmen + Fehlermeldung anzeigen
+        """
         isbn = self.input_isbn.text().strip()
         t = self.input_title.text().strip()
         p = self.input_publisher.text().strip()
         e = self.input_edition.text().strip()
         s = self.input_stock.text().strip()
 
-        ok = True
+        # MAC-FIX: Immer color und background-color mitgeben!
+        default_style = f"""
+            background-color: #FFFFFF;
+            color: #000000;
+            border: 1px solid #CCCCCC;
+            border-radius: {BUTTON_RADIUS}px;
+            padding: 10px;
+        """
+        self.input_isbn.setStyleSheet(default_style)
+        self.input_title.setStyleSheet(default_style)
+        self.input_publisher.setStyleSheet(default_style)
+        self.input_edition.setStyleSheet(default_style)
+        self.input_stock.setStyleSheet(default_style)
+
+        # MAC-FIX: Für Fehler-Felder auch!
         error_style = f"background-color: #FFFFFF; color: #000000; border: 2px solid #D32F2F; border-radius: {BUTTON_RADIUS}px; padding: 10px;"
 
-        if not isbn: self.input_isbn.setStyleSheet(error_style); ok = False
-        if not t: self.input_title.setStyleSheet(error_style); ok = False
-        if not p: self.input_publisher.setStyleSheet(error_style); ok = False
-        if not e: self.input_edition.setStyleSheet(error_style); ok = False
-        if not s or not s.isdigit(): self.input_stock.setStyleSheet(error_style); ok = False
+        ok = True
+        if not isbn:
+            self.input_isbn.setStyleSheet(error_style)
+            ok = False
+        if not t:
+            self.input_title.setStyleSheet(error_style)
+            ok = False
+        if not p:
+            self.input_publisher.setStyleSheet(error_style)
+            ok = False
+        if not e:
+            self.input_edition.setStyleSheet(error_style)
+            ok = False
+        if not s or not s.isdigit():
+            self.input_stock.setStyleSheet(error_style)
+            ok = False
 
         if not ok:
             self.error_label.show()
             return
+
         self.accept()
 
 
@@ -459,7 +598,11 @@ class BookDialog(QDialog):
 # - Tabelle mit Bestand (+/-) und Aktionen (Bearbeiten/Löschen)
 # - Suchlogik + Sortierlogik (Titel/Verlag/Auflage)
 #
-# Refactoring:
+# Ahmet Toplar (Bugfix PBI 11.12):
+# - Pop-up Fenster bei doppelter ISBN eingebaut
+# - Bestandsabfrage (Ja/Nein) mit direkter Datenbank-Aktualisierung integriert
+#
+# Refactoring-Hinweis:
 # - Das Widget erbt jetzt von BasePageWidget.
 # - Header, Breadcrumb, Seitentitel und Footer werden nicht mehr lokal
 #   aufgebaut, sondern zentral bereitgestellt.
@@ -516,7 +659,10 @@ class BuchverwaltungWidget(BasePageWidget):
         # ================= TABLE =================
         self.table = QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels(["ISBN", "Titel", "Verlag", "Auflage", "Bestand", "Aktionen"])
+
+        # WICHTIGE ZEILE FÜR DIE TABELLENHÖHE!
         self.table.verticalHeader().setDefaultSectionSize(60)
+
         self.table.setAlternatingRowColors(True)
         self.table.setShowGrid(True)
 
@@ -650,22 +796,97 @@ class BuchverwaltungWidget(BasePageWidget):
         self.table.setCellWidget(row, 5, action_widget)
 
     # --------------------------------------------------------------------------
-    # Daten werden direkt in die MariaDB geschrieben
+    # HILFSFUNKTION FÜR PBI 11.12: Prüft, ob ein Buch bereits existiert
+    # --------------------------------------------------------------------------
+    def _get_existing_book_data(self, isbn):
+        """Sucht in der Datenbank nach einer ISBN und gibt die Daten zurück."""
+        try:
+            # Nutzt die vorhandene get_books Funktion vom DatabaseManager
+            results = self.db_manager.get_books(isbn, "Sortieren nach: ISBN")
+            for book in results:
+                if str(book[0]) == str(isbn):
+                    return book
+            return None
+        except:
+            return None
+
+    # --------------------------------------------------------------------------
+    # PBI 11.12: Daten werden direkt in die MariaDB geschrieben (mit PRO Pop-up)
     # --------------------------------------------------------------------------
     def open_book_dialog(self):
         d = BookDialog(self)
         if d.exec() == QDialog.DialogCode.Accepted:
+            isbn = d.input_isbn.text().strip()
+            zusatz_bestand = int(d.input_stock.text().strip())
+
             try:
-                # Wir schicken die Daten direkt an den Datenbank-Manager
-                self.db_manager.add_book(
-                    d.input_isbn.text().strip(),
-                    d.input_title.text().strip(),
-                    d.input_publisher.text().strip(),
-                    d.input_edition.text().strip(),
-                    int(d.input_stock.text().strip())
-                )
-                # Tabelle neu laden, um das neue Buch anzuzeigen
-                self.filter_table()
+                existing_book = self._get_existing_book_data(isbn)
+
+                if existing_book:
+                    # PRO-Design für die MessageBox
+                    msg = QMessageBox(self)
+                    msg.setWindowTitle("Buch bereits vorhanden")
+                    msg.setIcon(QMessageBox.Icon.Information)
+                    msg.setText(f"<b>Das Buch '{existing_book[1]}' existiert bereits.</b>")
+                    msg.setInformativeText(
+                        f"Möchten Sie die {zusatz_bestand} Exemplare zum aktuellen Bestand ({existing_book[4]}) hinzufügen?")
+
+                    # Stylesheet anwenden, damit es edel aussieht
+                    msg.setStyleSheet(f"""
+                        QMessageBox {{
+                            background-color: #FFFFFF;
+                        }}
+                        QLabel {{
+                            color: #333333;
+                            font-size: 14px;
+                        }}
+                        QPushButton {{
+                            background-color: {self.COLOR};
+                            color: white;
+                            padding: 8px 20px;
+                            border: none;
+                            border-radius: {BUTTON_RADIUS}px;
+                            font-weight: bold;
+                            font-size: 13px;
+                            min-width: 100px;
+                        }}
+                        QPushButton:hover {{
+                            background-color: #4A90E2;
+                        }}
+                    """)
+
+                    ja_button = msg.addButton("Ja, hinzufügen", QMessageBox.ButtonRole.YesRole)
+                    nein_button = msg.addButton("Nein, abbrechen", QMessageBox.ButtonRole.NoRole)
+
+                    # Der "Nein"-Button bekommt ein graues Styling (Neutral)
+                    nein_button.setStyleSheet(f"""
+                        QPushButton {{
+                            background-color: #E0E0E0;
+                            color: #333333;
+                        }}
+                        QPushButton:hover {{
+                            background-color: #D7D7D7;
+                        }}
+                    """)
+
+                    msg.setDefaultButton(ja_button)
+                    msg.exec()
+
+                    if msg.clickedButton() == ja_button:
+                        neuer_bestand = int(existing_book[4]) + zusatz_bestand
+                        self.db_manager.update_stock(isbn, neuer_bestand)
+                        self.filter_table()
+                else:
+                    # Wir schicken die Daten direkt an den Datenbank-Manager
+                    self.db_manager.add_book(
+                        isbn,
+                        d.input_title.text().strip(),
+                        d.input_publisher.text().strip(),
+                        d.input_edition.text().strip(),
+                        zusatz_bestand
+                    )
+                    # Tabelle neu laden, um das neue Buch anzuzeigen
+                    self.filter_table()
             except Exception as e:
                 # Falls z.B. die ISBN schon existiert, zeigt das Loading-Widget den Fehler
                 self.data_stack.show_error(f"Fehler beim Hinzufügen: {str(e)}")
