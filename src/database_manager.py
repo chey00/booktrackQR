@@ -5,6 +5,7 @@
 # Sprint 4: Mustafa Demiral (Intelligente Get-or-Create DB Logik & ID-Handling)
 # Sprint 5: Mustafa Demiral (Soft-Delete & Admin-Löschung für Schüler)
 # Sprint 8: Datenbank-Befehle für Ausleihe & PBI 10.3.1 (Klassen-Buchlisten) von Mustafa Demiral & Ahmet Toplar
+# Sprint 9: Mustafa Demiral (PBI 11.6 - Automatische ID-Vergabe & Rechtemanagement Bugfix)
 # Zweck: Zentrale Schnittstelle zur MariaDB auf dem Raspberry Pi.
 # ------------------------------------------------------------------------------
 
@@ -259,10 +260,10 @@ class DatabaseManager:
             with conn.cursor() as cursor:
                 sql = """
                       UPDATE BuchTitel
-                      SET titel   = %s, \
-                          verlag  = %s, \
+                      SET titel   = %s,
+                          verlag  = %s,
                           auflage = %s
-                      WHERE isbn = %s \
+                      WHERE isbn = %s
                       """
                 cursor.execute(sql, (titel, verlag, auflage, isbn))
 
@@ -277,7 +278,7 @@ class DatabaseManager:
 
     # --- SCHÜLERVERWALTUNG ---
 
-    # MUSTAFA DEMIRAL (Sprint 5): Holt alle Schüler, berechnet formatierte ID per Modulo (schneidet Klassen-Block ab) und filtert inaktive aus.
+    # MUSTAFA DEMIRAL (Sprint 5): Holt alle Schüler, berechnet formatierte ID per Modulo
     def get_students(self, search_text=""):
         conn = self._get_connection()
         try:
@@ -285,7 +286,7 @@ class DatabaseManager:
                 sql = """
                       SELECT DISTINCT studierende_id, nachname, vorname, schulklasse, schuljahr, schueler_status
                       FROM v_studierende_ausleihen
-                      ORDER BY studierende_id ASC \
+                      ORDER BY studierende_id ASC
                       """
                 cursor.execute(sql)
                 all_students = cursor.fetchall()
@@ -368,7 +369,7 @@ class DatabaseManager:
                       FROM Studierende s
                                JOIN Schulklasse sk ON s.schulklasse_id = sk.schulklasse_id
                                JOIN Schuljahr sj ON sk.schuljahr_id = sj.schuljahr_id
-                      WHERE s.studierende_id = %s \
+                      WHERE s.studierende_id = %s
                       """
                 cursor.execute(sql, (student_id,))
                 return cursor.fetchone()
@@ -396,46 +397,91 @@ class DatabaseManager:
 
                 sql = """
                       INSERT INTO Studierende (studierende_id, vorname, nachname, status, schulklasse_id)
-                      VALUES (%s, %s, %s, 'AKTIV', %s) \
+                      VALUES (%s, %s, %s, 'AKTIV', %s)
                       """
                 cursor.execute(sql, (new_id, vorname, nachname, klasse_id))
                 return True
         finally:
             conn.close()
 
+    # MUSTAFA DEMIRAL (Sprint 9): PBI 11.6 - Komplett überarbeitetes rechtesicheres ID-Update (Kein FOREIGN_KEY_CHECKS nötig!)
     def update_student(self, student_id, nachname, vorname, klasse, schuljahr, manual_id=None):
         klasse_id = self.get_or_create_class(klasse, schuljahr)
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
-                current_manual = int(student_id) % 10000
-                new_manual = int(manual_id) if manual_id else current_manual
-                new_id = (klasse_id * 10000) + new_manual
+                # 1. Alte Klasse und Status abfragen
+                cursor.execute("SELECT schulklasse_id, status FROM Studierende WHERE studierende_id = %s",
+                               (student_id,))
+                row = cursor.fetchone()
+                if not row:
+                    return False
+                old_klasse_id = row[0]
+                current_status = row[1]
 
+                current_manual = int(student_id) % 10000
+
+                # 2. Intelligente ID Logik für die Klasse
+                if old_klasse_id != klasse_id:
+                    # Der Schüler wechselt die Klasse
+                    if manual_id and int(manual_id) != current_manual:
+                        # Fall A: Der Nutzer hat absichtlich eine ganz neue ID (z.B. 420) ins Textfeld eingetippt
+                        new_id = (klasse_id * 10000) + int(manual_id)
+                    else:
+                        # Fall B: Das Feld wurde nicht angefasst, wir vergeben automatisch die nächste freie Nummer
+                        cursor.execute("SELECT MAX(studierende_id) FROM Studierende WHERE schulklasse_id = %s",
+                                       (klasse_id,))
+                        max_id = cursor.fetchone()[0]
+                        if max_id and max_id >= (klasse_id * 10000):
+                            new_id = max_id + 1
+                        else:
+                            new_id = (klasse_id * 10000) + 1
+                else:
+                    # Der Schüler bleibt in der gleichen Klasse (nur Name ändert sich z.B.)
+                    new_manual = int(manual_id) if manual_id else current_manual
+                    new_id = (klasse_id * 10000) + new_manual
+
+                # 3. Das Umhängen in der sicheren Reihenfolge
                 if new_id != student_id:
+                    # Prüfen ob ID schon vergeben ist
                     cursor.execute("SELECT studierende_id FROM Studierende WHERE studierende_id = %s", (new_id,))
                     if cursor.fetchone():
                         return False
 
-                    sql = """
-                          UPDATE Studierende
-                          SET studierende_id = %s, \
-                              vorname        = %s, \
-                              nachname       = %s, \
-                              schulklasse_id = %s
-                          WHERE studierende_id = %s
-                          """
-                    cursor.execute(sql, (new_id, vorname, nachname, klasse_id, student_id))
+                    # Schritt 1: Klon anlegen (völlig ungefährlich)
+                    sql_insert = """
+                                 INSERT INTO Studierende (studierende_id, vorname, nachname, status, schulklasse_id)
+                                 VALUES (%s, %s, %s, %s, %s) \
+                                 """
+                    cursor.execute(sql_insert, (new_id, vorname, nachname, current_status, klasse_id))
+
+                    # Schritt 2 & 3: Kinder (Bücher) auf den neuen Klon umhängen
+                    cursor.execute("UPDATE Ausleihe_Aktuell SET studierende_id = %s WHERE studierende_id = %s",
+                                   (new_id, student_id))
+
+                    try:
+                        cursor.execute("UPDATE Ausleihe_Historie SET studierende_id = %s WHERE studierende_id = %s",
+                                       (new_id, student_id))
+                    except:
+                        pass  # Falls es Historie auf dieser DB-Version nicht gibt, mach normal weiter
+
+                    # Schritt 4: Das leere Original löschen (Da alle Kinder weg sind, greift kein Foreign Key Alarm mehr!)
+                    cursor.execute("DELETE FROM Studierende WHERE studierende_id = %s", (student_id,))
+
                 else:
+                    # Normale Namensänderung
                     sql = """
                           UPDATE Studierende
-                          SET vorname        = %s, \
-                              nachname       = %s, \
+                          SET vorname        = %s,
+                              nachname       = %s,
                               schulklasse_id = %s
                           WHERE studierende_id = %s
                           """
                     cursor.execute(sql, (vorname, nachname, klasse_id, student_id))
                 return True
+        except Exception as e:
+            print(f"Fehler beim Update des Schülers: {e}")
+            return False
         finally:
             conn.close()
 
@@ -514,8 +560,8 @@ class DatabaseManager:
                                JOIN Studierende s ON a.studierende_id = s.studierende_id
                                JOIN BuchExemplar e ON a.exemplar_id = e.exemplar_id
                                JOIN BuchTitel t ON e.isbn = t.isbn
-                      WHERE t.isbn = %s \
-                        AND s.status = 'AKTIV' LIMIT 1 \
+                      WHERE t.isbn = %s
+                        AND s.status = 'AKTIV' LIMIT 1
                       """
                 cursor.execute(sql, (isbn,))
                 res = cursor.fetchone()
@@ -577,7 +623,7 @@ class DatabaseManager:
                                 SELECT exemplar_id
                                 FROM BuchExemplar
                                 WHERE isbn = %s
-                                  AND exemplar_id NOT IN (SELECT exemplar_id FROM Ausleihe_Aktuell) LIMIT 1 \
+                                  AND exemplar_id NOT IN (SELECT exemplar_id FROM Ausleihe_Aktuell) LIMIT 1
                                 """
                 cursor.execute(sql_find_free, (isbn,))
                 result = cursor.fetchone()
@@ -589,7 +635,7 @@ class DatabaseManager:
 
                 sql_insert = """
                              INSERT INTO Ausleihe_Aktuell (studierende_id, exemplar_id)
-                             VALUES (%s, %s) \
+                             VALUES (%s, %s)
                              """
                 cursor.execute(sql_insert, (real_db_id, free_exemplar_id))
 
@@ -611,10 +657,10 @@ class DatabaseManager:
         try:
             with conn.cursor() as cursor:
                 sql = """
-                      DELETE \
+                      DELETE
                       FROM Ausleihe_Aktuell
                       WHERE studierende_id = %s
-                        AND exemplar_id IN (SELECT exemplar_id FROM BuchExemplar WHERE isbn = %s) \
+                        AND exemplar_id IN (SELECT exemplar_id FROM BuchExemplar WHERE isbn = %s)
                       """
                 cursor.execute(sql, (real_db_id, isbn))
                 return cursor.rowcount > 0

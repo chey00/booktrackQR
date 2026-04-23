@@ -62,7 +62,7 @@ class RueckgabeWidget(BasePageWidget):
         # --- 2. BUCH-SCAN BEREICH ---
         b_layout = QHBoxLayout()
         self.in_book = QLineEdit()
-        self.in_book.setPlaceholderText("Buch-QR-Code scannen...")
+        self.in_book.setPlaceholderText("Buch-ID eingeben oder scannen")
         self.in_book.setStyleSheet(
             "padding:12px; border:1px solid #CCC; border-radius:8px; color: #000000; font-size: 14px; background: white;")
         self.in_book.setReadOnly(True)
