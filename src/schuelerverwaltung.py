@@ -968,7 +968,6 @@ class KlassenTab(BaseTab):
     def refresh_year_filter(self):
         if not self.db_manager: return
 
-        # Airbag für Tab-Wechsel
         try:
             current_text = self.filter_jahr.currentText()
             self.filter_jahr.blockSignals(True)
@@ -988,47 +987,51 @@ class KlassenTab(BaseTab):
         if not self.db_manager: return
 
         try:
-            alle_klassen = self.db_manager.get_classes()
+            alle_klassen_roh = self.db_manager.get_classes()
+            alle_aktiven_schueler = self.db_manager.get_students()
+
+            echte_counts = {}
+            for s in alle_aktiven_schueler:
+                key = (str(s[3]), str(s[4]))
+                echte_counts[key] = echte_counts.get(key, 0) + 1
+
             txt = self.search_input.text().lower()
             jahr_filter = self.filter_jahr.currentText()
 
             gefiltert = []
-            for k in alle_klassen:
-                s_jahr = str(k[0])
-                s_name = str(k[1])
+            for k in alle_klassen_roh:
+                s_jahr, s_name = str(k[0]), str(k[1])
+
+                echte_anzahl = echte_counts.get((s_name, s_jahr), 0)
+                korrigierte_klasse = (s_jahr, s_name, echte_anzahl)
+
                 match_txt = txt in s_name.lower() or txt in s_jahr.lower()
                 match_jahr = (jahr_filter == "Schuljahre (Alle)" or jahr_filter == s_jahr)
+
                 if match_txt and match_jahr:
-                    gefiltert.append(k)
+                    gefiltert.append(korrigierte_klasse)
 
             self.load_table_data(gefiltert)
         except Exception as e:
-            print(f"Fehler beim Laden der Klassen-Tabelle: {e}")
+            print(f"Fehler im KlassenTab: {e}")
 
     def load_table_data(self, data_list):
         self.table.setRowCount(len(data_list))
-        btn_edit_style = f"""
-            QPushButton {{ background: transparent; border: none; font-size: 16px; color: #333333; border-radius: {BUTTON_RADIUS}px; }}
-            QPushButton:hover {{ background-color: #E0E0E0; }}
-        """
-        btn_delete_style = f"""
-            QPushButton {{ background: transparent; border: none; font-size: 16px; color: #333333; border-radius: {BUTTON_RADIUS}px; }}
-            QPushButton:hover {{ background-color: #FFCDD2; }}
-        """
+        btn_edit_style = f"QPushButton {{ background: transparent; border: none; font-size: 16px; color: #333333; border-radius: {BUTTON_RADIUS}px; }} QPushButton:hover {{ background-color: #E0E0E0; }}"
+        btn_delete_style = f"QPushButton {{ background: transparent; border: none; font-size: 16px; color: #333333; border-radius: {BUTTON_RADIUS}px; }} QPushButton:hover {{ background-color: #FFCDD2; }}"
 
         for row, klasse in enumerate(data_list):
-            for col in range(3):
-                item = QTableWidgetItem(str(klasse[col]))
-                item.setFlags(item.flags() ^ Qt.ItemFlag.ItemIsEditable)
-                item.setForeground(QBrush(Qt.GlobalColor.black))
-                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                self.table.setItem(row, col, item)
+
+            self.table.setItem(row, 0, self._create_readonly_item(str(klasse[0])))
+            self.table.setItem(row, 1, self._create_readonly_item(str(klasse[1])))
+            self.table.setItem(row, 2, self._create_readonly_item(str(klasse[2])))
 
             action_widget = QWidget()
             action_widget.setStyleSheet("background: transparent;")
             action_layout = QHBoxLayout(action_widget)
             action_layout.setContentsMargins(5, 2, 5, 2)
             action_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
             kid = f"{klasse[1]}_{klasse[0]}"
             kname = f"{klasse[1]} ({klasse[0]})"
 
@@ -1045,6 +1048,14 @@ class KlassenTab(BaseTab):
             action_layout.addWidget(btn_edit)
             action_layout.addWidget(btn_delete)
             self.table.setCellWidget(row, 3, action_widget)
+
+    def _create_readonly_item(self, text):
+        """Hilfsmethode für einheitliche Items"""
+        item = QTableWidgetItem(text)
+        item.setFlags(item.flags() ^ Qt.ItemFlag.ItemIsEditable)
+        item.setForeground(QBrush(Qt.GlobalColor.black))
+        item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        return item
 
     def open_klassen_dialog(self):
         d = KlassenDialog(self)
