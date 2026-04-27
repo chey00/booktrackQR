@@ -1071,19 +1071,29 @@ class KlassenTab(BaseTab):
     def edit_klasse(self, kid):
         self.show_popup("Info", f"Bearbeiten-Funktion für {kid} folgt in Kürze.")
 
-    def delete_klasse(self, kid, kname):
-        parts = kid.split('_')
-        if len(parts) < 2: return
-        name, jahr = parts[0], parts[1]
-        msg = f"⚠️ Möchten Sie die Klasse '{kname}' wirklich löschen?\n\nACHTUNG: Dadurch werden auch alle zugeordneten Schüler unwiderruflich entfernt!"
+    def delete_klasse(self, kid, klasse_name):
+        dialog = StudentDeleteDialog(self, klasse_name)
 
-        if DeleteConfirmDialog(self, msg).exec() == QDialog.DialogCode.Accepted:
-            try:
-                self.db_manager.delete_class(name, jahr)
-                self.filter_table()
-                self.show_popup("Erfolg", f"Die Klasse '{kname}' samt Schülern wurde gelöscht.")
-            except Exception as e:
-                self.show_popup("Fehler", f"Löschen fehlgeschlagen: {e}")
+        if hasattr(dialog, 'btn_deactivate'):
+            dialog.btn_deactivate.hide()
+
+        if hasattr(dialog, 'label'):
+            dialog.label.setText(f"Möchten Sie die Klasse '{klasse_name}' wirklich löschen?\n\n"
+                                 f"Hinweis: Zugeordnete Schüler werden ebenfalls gelöscht.")
+
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            if dialog.pw_input.text() == "admin123":
+                try:
+                    parts = kid.split('_')
+                    if len(parts) >= 2:
+                        k_name, k_jahr = parts[0], parts[1]
+                        self.db_manager.delete_class(k_name, k_jahr)
+                        self.filter_table()
+                except Exception as e:
+                    print(f"Fehler: {e}")
+            else:
+                from PyQt6.QtWidgets import QMessageBox
+                QMessageBox.warning(self, "Abgelehnt", "Falsches Admin-Passwort!")
 
     def import_klassen(self):
         self.show_popup("Info", "Import-Schnittstelle wird für MariaDB optimiert.")
@@ -1178,14 +1188,28 @@ class SchuljahrTab(BaseTab):
                 self.filter_table()
 
     def delete_jahr(self, jid, jahr_name):
-        msg = f"⚠️ Möchten Sie das Schuljahr '{jahr_name}' wirklich löschen?\n\nACHTUNG: Dadurch werden auch ALLE Klassen und Schüler in diesem Jahr unwiderruflich entfernt!"
-        if DeleteConfirmDialog(self, msg).exec() == QDialog.DialogCode.Accepted:
-            try:
-                self.db_manager.delete_school_year(jid)
-                self.filter_table()
-                self.show_popup("Erfolg", f"Das Schuljahr '{jahr_name}' samt Inhalt wurde gelöscht.")
-            except Exception as e:
-                self.show_popup("Fehler", f"Löschen fehlgeschlagen: {e}")
+        dialog = StudentDeleteDialog(self, jahr_name)
+
+        if hasattr(dialog, 'btn_deactivate'):
+            dialog.btn_deactivate.hide()
+
+        if hasattr(dialog, 'label'):
+            dialog.label.setText(f"Möchten Sie das Schuljahr '{jahr_name}' wirklich löschen?\n\n"
+                                 f"UNG: Dadurch werden auch alle zugeordeten Klassen und "
+                                 f"Schüler unwiderruflich entfernt!")
+
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            if dialog.pw_input.text() == "admin123":
+                try:
+                    self.db_manager.delete_school_year(jid)
+                    self.filter_table()
+                    if hasattr(self, 'show_popup'):
+                        self.show_popup("Erfolg", f"Schuljahr {jahr_name} wurde gelöscht.")
+                except Exception as e:
+                    print(f"Fehler: {e}")
+            else:
+                from PyQt6.QtWidgets import QMessageBox
+                QMessageBox.warning(self, "Abgelehnt", "Falsches Admin-Passwort!")
 
     def import_jahre(self):
         self.show_popup("Info", "Import-Funktion wird vorbereitet.")
