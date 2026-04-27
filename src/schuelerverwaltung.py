@@ -1215,6 +1215,7 @@ class SchuljahrTab(BaseTab):
         self.show_popup("Info", "Import-Funktion wird vorbereitet.")
 
 
+
 class BuchlistenTab(BaseTab):
     def __init__(self, parent=None):
         super().__init__(parent)
