@@ -37,7 +37,7 @@ def get_btn_style(bg_color, text_color="white"):
     return f"""
     QPushButton {{
         background-color: {bg_color};
-        color: {text_color};
+        color: {text_color}; 
         padding: 8px 20px;
         border: 3px solid {bg_color};
         border-radius: {BUTTON_RADIUS}px;
