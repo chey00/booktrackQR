@@ -8,7 +8,6 @@
 
  -> alle DMG-Datein (Fertige app der BookTrackQR finden Sie in diesem OneDrive: 
 
- #####################################################################################################
 
 https://sbsherzogenaurachde-my.sharepoint.com/personal/a_hoepfl_sbs-herzogenaurach_de/_layouts/15/onedrive.aspx?viewid=73879294%2D56aa%2D40ae%2D8b49%2D6b0a0b532532&id=%2Fpersonal%2Fa%5Fhoepfl%5Fsbs%2Dherzogenaurach%5Fde%2FDocuments%2F89%5FZumTeilen%2FBooktrackQR%2FReleaases%2FONLINE%2FBooktrackQR%5FRelease%5Fv1%2E9%2Edmg&parent=%2Fpersonal%2Fa%5Fhoepfl%5Fsbs%2Dherzogenaurach%5Fde%2FDocuments%2F89%5FZumTeilen%2FBooktrackQR%2FReleaases%2FONLINE
 
@@ -21,6 +20,7 @@ Version: V 1.7 ( Stand vom 16.0426 ) war die letzte DMG - Datei die von mir( Den
 Version: V 1.6 ( Stand vom 24.03.26 ) 
 
 Die Versionsnummer wird beim Release automatisch aktualisiert.
+#####################################################################################################
 
 ## Projektbeschreibung
 
