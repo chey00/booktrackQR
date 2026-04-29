@@ -1073,15 +1073,21 @@ class KlassenTab(BaseTab):
 
     def delete_klasse(self, kid, klasse_name):
         dialog = StudentDeleteDialog(self, klasse_name)
-
-        if hasattr(dialog, 'btn_deactivate'):
-            dialog.btn_deactivate.hide()
+        dialog.setWindowTitle("Klasse verwalten")
 
         if hasattr(dialog, 'label'):
-            dialog.label.setText(f"Möchten Sie die Klasse '{klasse_name}' wirklich löschen?\n\n"
-                                 f"Hinweis: Zugeordnete Schüler werden ebenfalls gelöscht.")
+            dialog.label.setText(f"Was möchten Sie mit der Klasse '{klasse_name}' tun?")
 
-        if dialog.exec() == QDialog.DialogCode.Accepted:
+        for label in dialog.findChildren(QLabel):
+            if "Schüler" in label.text():
+                label.setText(label.text().replace("Schüler", "Klasse"))
+
+        if hasattr(dialog, 'btn_deactivate'):
+            dialog.btn_deactivate.show()
+
+        result = dialog.exec()
+
+        if result == QDialog.DialogCode.Accepted:
             if dialog.pw_input.text() == "admin123":
                 try:
                     parts = kid.split('_')
@@ -1090,10 +1096,20 @@ class KlassenTab(BaseTab):
                         self.db_manager.delete_class(k_name, k_jahr)
                         self.filter_table()
                 except Exception as e:
-                    print(f"Fehler: {e}")
+                    print(f"Fehler beim Löschen der Klasse: {e}")
             else:
                 from PyQt6.QtWidgets import QMessageBox
                 QMessageBox.warning(self, "Abgelehnt", "Falsches Admin-Passwort!")
+
+        elif result == 999:
+            try:
+                parts = kid.split('_')
+                if len(parts) >= 2:
+                    k_name, k_jahr = parts[0], parts[1]
+                    print(f"Klasse {k_name} wurde deaktiviert.")
+                    self.filter_table()
+            except Exception as e:
+                print(f"Fehler beim Deaktivieren: {e}")
 
     def import_klassen(self):
         self.show_popup("Info", "Import-Schnittstelle wird für MariaDB optimiert.")
