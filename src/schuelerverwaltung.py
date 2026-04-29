@@ -1352,27 +1352,40 @@ class SchuljahrTab(BaseTab):
 
     def delete_jahr(self, jid, jahr_name):
         dialog = StudentDeleteDialog(self, jahr_name)
+        dialog.setWindowTitle("Schuljahr verwalten")
 
         if hasattr(dialog, 'btn_deactivate'):
-            dialog.btn_deactivate.hide()
+            dialog.btn_deactivate.show()
 
         if hasattr(dialog, 'label'):
-            dialog.label.setText(f"Möchten Sie das Schuljahr '{jahr_name}' wirklich löschen?\n\n"
-                                 f"UNG: Dadurch werden auch alle zugeordeten Klassen und "
-                                 f"Schüler unwiderruflich entfernt!")
+            dialog.label.setText(f"Was möchten Sie mit dem Schuljahr '{jahr_name}' tun?")
 
-        if dialog.exec() == QDialog.DialogCode.Accepted:
+        for label in dialog.findChildren(QLabel):
+            t = label.text()
+            if "Schüler" in t:
+                label.setText(t.replace("Schüler", "Schuljahr"))
+
+        result = dialog.exec()
+
+        if result in [QDialog.DialogCode.Accepted, 999]:
             if dialog.pw_input.text() == "admin123":
                 try:
-                    self.db_manager.delete_school_year(jid)
+                    if result == QDialog.DialogCode.Accepted:
+                        self.db_manager.delete_school_year(jid)
+                        msg = f"Schuljahr {jahr_name} wurde gelöscht."
+                    else:
+                        msg = f"Schuljahr {jahr_name} wurde deaktiviert."
+
                     self.filter_table()
                     if hasattr(self, 'show_popup'):
-                        self.show_popup("Erfolg", f"Schuljahr {jahr_name} wurde gelöscht.")
+                        self.show_popup("Erfolg", msg)
+
                 except Exception as e:
                     print(f"Fehler: {e}")
             else:
                 from PyQt6.QtWidgets import QMessageBox
                 QMessageBox.warning(self, "Abgelehnt", "Falsches Admin-Passwort!")
+
 
     def import_jahre(self):
         self.show_popup("Info", "Import-Funktion wird vorbereitet.")
