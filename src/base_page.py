@@ -34,7 +34,7 @@ class InfoDialog(QDialog):
         # 1. Text-Block (Version, Info & Team)
         # Wir nutzen Inline-CSS, um die schwarze Farbe für die Labels zu garantieren
         info_text = (
-            "<b style='font-size: 16px; color: #000000;'>BooktrackQR Version 1.0</b><br><br>"
+            "<b style='font-size: 16px; color: #000000;'>BooktrackQR Version 1.9</b><br><br>"
             "<span style='color: #000000; font-size: 14px;'>"
             "Software zur Verwaltung der Bücher in den Technikerschulen.<br><br>"
             "<b>Entwickler Team im Schuljahr 25/26:</b><br>"

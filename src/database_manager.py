@@ -38,8 +38,7 @@ class DatabaseManager:
             user=self.user,
             password=self.password,
             database=self.db_name,
-            port=self.port,
-            autocommit=True
+            port=self.port
         )
 
     # ==============================================================================
@@ -340,6 +339,11 @@ class DatabaseManager:
         try:
             with conn.cursor() as cursor:
                 cursor.execute("UPDATE Studierende SET status = 'INAKTIV' WHERE studierende_id = %s", (student_id,))
+            # FIX: Änderungen speichern!
+            conn.commit()
+        except Exception as e:
+            print(f"Fehler beim Deaktivieren: {e}")
+            conn.rollback()
         finally:
             conn.close()
 
@@ -348,31 +352,11 @@ class DatabaseManager:
         try:
             with conn.cursor() as cursor:
                 cursor.execute("DELETE FROM Studierende WHERE studierende_id = %s", (student_id,))
-        finally:
-            conn.close()
-
-    def delete_all_inactive_students(self):
-        conn = self._get_connection()
-        try:
-            with conn.cursor() as cursor:
-                cursor.execute("DELETE FROM Studierende WHERE status = 'INAKTIV'")
-                return cursor.rowcount
-        finally:
-            conn.close()
-
-    def get_student_by_id(self, student_id):
-        conn = self._get_connection()
-        try:
-            with conn.cursor() as cursor:
-                sql = """
-                      SELECT s.studierende_id, s.nachname, s.vorname, sk.name, sj.jahr
-                      FROM Studierende s
-                               JOIN Schulklasse sk ON s.schulklasse_id = sk.schulklasse_id
-                               JOIN Schuljahr sj ON sk.schuljahr_id = sj.schuljahr_id
-                      WHERE s.studierende_id = %s
-                      """
-                cursor.execute(sql, (student_id,))
-                return cursor.fetchone()
+            # FIX: Änderungen speichern!
+            conn.commit()
+        except Exception as e:
+            print(f"Fehler beim Löschen: {e}")
+            conn.rollback()
         finally:
             conn.close()
 
@@ -400,7 +384,38 @@ class DatabaseManager:
                       VALUES (%s, %s, %s, 'AKTIV', %s)
                       """
                 cursor.execute(sql, (new_id, vorname, nachname, klasse_id))
-                return True
+
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"Fehler beim Hinzufügen: {e}")
+            conn.rollback()
+            return False
+        finally:
+            conn.close()
+
+    def delete_all_inactive_students(self):
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("DELETE FROM Studierende WHERE status = 'INAKTIV'")
+                return cursor.rowcount
+        finally:
+            conn.close()
+
+    def get_student_by_id(self, student_id):
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cursor:
+                sql = """
+                      SELECT s.studierende_id, s.nachname, s.vorname, sk.name, sj.jahr
+                      FROM Studierende s
+                               JOIN Schulklasse sk ON s.schulklasse_id = sk.schulklasse_id
+                               JOIN Schuljahr sj ON sk.schuljahr_id = sj.schuljahr_id
+                      WHERE s.studierende_id = %s
+                      """
+                cursor.execute(sql, (student_id,))
+                return cursor.fetchone()
         finally:
             conn.close()
 
