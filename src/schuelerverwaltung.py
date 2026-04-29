@@ -1258,16 +1258,6 @@ class KlassenTab(BaseTab):
                 from PyQt6.QtWidgets import QMessageBox
                 QMessageBox.warning(self, "Abgelehnt", "Falsches Admin-Passwort!")
 
-        elif result == 999:
-            try:
-                parts = kid.split('_')
-                if len(parts) >= 2:
-                    k_name, k_jahr = parts[0], parts[1]
-                    print(f"Klasse {k_name} wurde deaktiviert.")
-                    self.filter_table()
-            except Exception as e:
-                print(f"Fehler beim Deaktivieren: {e}")
-
     def import_klassen(self):
         self.show_popup("Info", "Import-Schnittstelle wird für MariaDB optimiert.")
 
