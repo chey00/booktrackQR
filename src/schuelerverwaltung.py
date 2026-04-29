@@ -7,6 +7,9 @@
 # Sprint 5 Autor: Mustafa Demiral (Soft-Delete & Admin-Löschung für Schüler)
 # Sprint 8 Autoren: Mustafa Demiral, Ahmet Toplar (PBI 10.3 & 10.3.1: Buchlisten anlegen)
 # Sprint 9 Autor: Mustafa Demiral (PBI 11.6 & 11.9: Bugfixes + Anti-Absturz-Logik)
+# Sprint 10 Update:
+# - PBI 11.5: Dynamische Schuljahre & Klassen in Dialogen (Synchron mit Schuljahrverwaltung)
+# - PBI 11.3: Archiv-Ansicht für inaktive Schüler integriert
 # Stand: Soft-Delete implementiert, Mac-DarkMode-Fix für Listen integriert, Buchlisten-Tab integriert.
 #
 # Refactoring-Hinweis:
@@ -260,6 +263,114 @@ class CleanArchiveDialog(QDialog):
             self.error_label.setText("Falsches Admin-Passwort!")
 
 
+# --- PBI 11.3: Archiv-Dialog für inaktive Schüler mit Button-Fix ---
+class InactiveStudentsDialog(QDialog):
+    def __init__(self, parent=None, db_manager=None):
+        super().__init__(parent)
+        self.db_manager = db_manager
+        self.setWindowTitle("Archiv - Inaktive Schüler")
+        self.setFixedSize(900, 500)
+        self.setStyleSheet("background-color: #FFFFFF;")
+
+        layout = QVBoxLayout(self)
+
+        title = QLabel("Inaktive Schüler (Archiv)")
+        title.setFont(QFont("Open Sans", 14, QFont.Weight.Bold))
+        layout.addWidget(title)
+
+        self.table = QTableWidget(0, 5)
+        self.table.setHorizontalHeaderLabels(["ID", "Nachname", "Vorname", "Klasse", "Aktionen"])
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.table.verticalHeader().setVisible(False)
+        self.table.setStyleSheet("QTableWidget { gridline-color: #EEE; color: black; background-color: #FFFFFF; }")
+        layout.addWidget(self.table)
+
+        self.refresh_data()
+
+        btn_close = QPushButton("Schließen")
+        btn_close.setStyleSheet(get_btn_style("#E0E0E0", "#333333"))
+        btn_close.clicked.connect(self.accept)
+        layout.addWidget(btn_close, alignment=Qt.AlignmentFlag.AlignRight)
+
+    def refresh_data(self):
+        self.table.setRowCount(0)
+        if not self.db_manager: return
+
+        conn = self.db_manager._get_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                               SELECT s.studierende_id, s.nachname, s.vorname, sk.name, sj.jahr
+                               FROM Studierende s
+                                        JOIN Schulklasse sk ON s.schulklasse_id = sk.schulklasse_id
+                                        JOIN Schuljahr sj ON sk.schuljahr_id = sj.schuljahr_id
+                               WHERE s.status = 'INAKTIV'
+                               """)
+                inactive = cursor.fetchall()
+                self.table.setRowCount(len(inactive))
+
+                # Kompakter Style für Tabellen-Buttons
+                table_btn_style = """
+                    QPushButton {
+                        padding: 4px 8px;
+                        border-radius: 6px;
+                        font-weight: bold;
+                        font-size: 12px;
+                        min-width: 120px;
+                        color: white;
+                        border: none;
+                    }
+                """
+
+                for row, s in enumerate(inactive):
+                    display_id = s[0] % 10000
+                    safe_jahr = str(s[4]).replace('/', '-')
+                    formatted_id = f"{s[3]}_{safe_jahr}_{display_id:03d}"
+
+                    self.table.setItem(row, 0, QTableWidgetItem(formatted_id))
+                    self.table.setItem(row, 1, QTableWidgetItem(str(s[1])))
+                    self.table.setItem(row, 2, QTableWidgetItem(str(s[2])))
+                    self.table.setItem(row, 3, QTableWidgetItem(str(s[3])))
+
+                    action_widget = QWidget()
+                    action_layout = QHBoxLayout(action_widget)
+                    action_layout.setContentsMargins(10, 2, 10, 2)
+                    action_layout.setSpacing(15)
+                    action_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+                    btn_reactivate = QPushButton("Aktiv setzen")
+                    btn_reactivate.setStyleSheet(
+                        table_btn_style + "QPushButton { background-color: #4CAF50; } QPushButton:hover { background-color: #45a049; }")
+                    btn_reactivate.clicked.connect(lambda ch, sid=s[0]: self.reactivate(sid))
+
+                    btn_delete = QPushButton("Endgültig Löschen")
+                    btn_delete.setStyleSheet(
+                        table_btn_style + "QPushButton { background-color: #D32F2F; } QPushButton:hover { background-color: #b71c1c; }")
+                    btn_delete.clicked.connect(lambda ch, sid=s[0]: self.final_delete(sid))
+
+                    action_layout.addWidget(btn_reactivate)
+                    action_layout.addWidget(btn_delete)
+                    self.table.setCellWidget(row, 4, action_widget)
+        finally:
+            conn.close()
+
+    def reactivate(self, sid):
+        conn = self.db_manager._get_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("UPDATE Studierende SET status = 'AKTIV' WHERE studierende_id = %s", (sid,))
+            conn.commit()
+            self.refresh_data()
+        finally:
+            conn.close()
+
+    def final_delete(self, sid):
+        confirm = DeleteConfirmDialog(self, "Diesen Schüler wirklich permanent löschen?")
+        if confirm.exec() == QDialog.DialogCode.Accepted:
+            self.db_manager.delete_student(sid)
+            self.refresh_data()
+
+
 # ==============================================================================
 # DIALOGE
 # ==============================================================================
@@ -293,11 +404,18 @@ class StudentDialog(QDialog):
         self.input_nachname = QLineEdit()
         self.input_nachname.setPlaceholderText("Nachname eingeben")
 
+        # PBI 11.5: Dynamisches Laden aus DB
         self.combo_klasse = QComboBox()
-        self.combo_klasse.addItems(["Bitte wählen...", "MB", "MT", "KI", "WI"])
-
+        self.combo_klasse.addItem("Bitte wählen...")
         self.combo_jahr = QComboBox()
-        self.combo_jahr.addItems(["Bitte wählen...", "2023-24", "2024-25", "2025-26", "2026-27"])
+        self.combo_jahr.addItem("Bitte wählen...")
+
+        if parent and hasattr(parent, 'db_manager'):
+            klassen = parent.db_manager.get_classes()
+            klassen_namen = sorted(list(set(k[1] for k in klassen)))
+            self.combo_klasse.addItems(klassen_namen)
+            jahre = parent.db_manager.get_school_years()
+            self.combo_jahr.addItems([str(j[1]) for j in jahre])
 
         self.id_prefix_label = QLabel("..._..._")
         self.id_prefix_label.setStyleSheet("color: #666666; font-style: italic; font-weight: normal;")
@@ -420,7 +538,11 @@ class KlassenDialog(QDialog):
         self.input_name = QLineEdit()
         self.input_name.setPlaceholderText("z.B. MB")
         self.combo_jahr = QComboBox()
-        self.combo_jahr.addItems(["Bitte wählen...", "2023-24", "2024-25", "2025-26", "2026-27"])
+        self.combo_jahr.addItem("Bitte wählen...")
+
+        if parent and hasattr(parent, 'db_manager'):
+            jahre = parent.db_manager.get_school_years()
+            self.combo_jahr.addItems([str(j[1]) for j in jahre])
 
         for w in [self.input_name, self.combo_jahr]:
             w.setFixedWidth(250)
@@ -580,12 +702,12 @@ class SchuelerTab(BaseTab):
         self.search_input.setStyleSheet(self.input_style)
 
         self.filter_combo = QComboBox()
-        self.filter_combo.addItems(["Klassen (Alle)", "MB", "MT", "KI", "WI"])
+        self.filter_combo.addItem("Klassen (Alle)")
         self.filter_combo.setFixedWidth(180)
         self.filter_combo.setStyleSheet(self.input_style)
 
         self.filter_jahr = QComboBox()
-        self.filter_jahr.addItems(["Schuljahre (Alle)", "2023-24", "2024-25", "2025-26", "2026-27"])
+        self.filter_jahr.addItem("Schuljahre (Alle)")
         self.filter_jahr.setFixedWidth(180)
         self.filter_jahr.setStyleSheet(self.input_style)
 
@@ -617,6 +739,11 @@ class SchuelerTab(BaseTab):
         btn_import.setStyleSheet(get_import_btn_style())
         btn_import.clicked.connect(self.import_students)
 
+        # NEUER BUTTON: Archiv
+        btn_archive = QPushButton("📁 Inaktive Schüler (Archiv)")
+        btn_archive.setStyleSheet(get_import_btn_style())
+        btn_archive.clicked.connect(self.open_archive_dialog)
+
         btn_clean = QPushButton("🗑️ Archiv leeren")
         btn_clean.setStyleSheet(get_import_btn_style())
         btn_clean.clicked.connect(self.clean_archive)
@@ -624,6 +751,7 @@ class SchuelerTab(BaseTab):
         footer_layout.addWidget(btn_add)
         footer_layout.addStretch()
         footer_layout.addWidget(btn_import)
+        footer_layout.addWidget(btn_archive)
         footer_layout.addWidget(btn_clean)
         self.main_layout.addLayout(footer_layout)
 
@@ -632,13 +760,39 @@ class SchuelerTab(BaseTab):
         self.filter_jahr.currentTextChanged.connect(self.refresh_data)
 
         if self.db_manager:
+            self.refresh_filter_lists()
             self.refresh_data()
+
+    def refresh_filter_lists(self):
+        """PBI 11.5: Synchronisiert Filter mit DB."""
+        if not self.db_manager: return
+        self.filter_combo.blockSignals(True)
+        self.filter_jahr.blockSignals(True)
+
+        curr_kl = self.filter_combo.currentText()
+        curr_jr = self.filter_jahr.currentText()
+
+        self.filter_combo.clear()
+        self.filter_combo.addItem("Klassen (Alle)")
+        klassen = self.db_manager.get_classes()
+        namen = sorted(list(set(k[1] for k in klassen)))
+        self.filter_combo.addItems(namen)
+
+        self.filter_jahr.clear()
+        self.filter_jahr.addItem("Schuljahre (Alle)")
+        jahre = self.db_manager.get_school_years()
+        self.filter_jahr.addItems([str(j[1]) for j in jahre])
+
+        self.filter_combo.setCurrentText(curr_kl if self.filter_combo.findText(curr_kl) != -1 else "Klassen (Alle)")
+        self.filter_jahr.setCurrentText(curr_jr if self.filter_jahr.findText(curr_jr) != -1 else "Schuljahre (Alle)")
+
+        self.filter_combo.blockSignals(False)
+        self.filter_jahr.blockSignals(False)
 
     def refresh_data(self):
         if not self.db_manager:
             return
 
-        # Airbag-Block für Datenbank-Abfrage
         try:
             search_text = self.search_input.text().lower()
             all_matching_students = self.db_manager.get_students()
@@ -780,6 +934,12 @@ class SchuelerTab(BaseTab):
                 self.refresh_data()
                 self.show_popup("Erfolg", f"Der Schüler '{student_name}' wurde endgültig gelöscht.")
 
+    # PBI 11.3: Archiv-Dialog aufrufen
+    def open_archive_dialog(self):
+        d = InactiveStudentsDialog(self, self.db_manager)
+        d.exec()
+        self.refresh_data()
+
     def clean_archive(self):
         if not self.db_manager:
             return
@@ -841,7 +1001,6 @@ class SchuelerTab(BaseTab):
                             jahr = str(row[j_idx]).strip()
 
                             if not vorname or not nachname: continue
-                            if klasse not in ["MB", "MT", "KI", "WI"]: continue
 
                             manual_id = None
                             if raw_id:
@@ -889,7 +1048,6 @@ class SchuelerTab(BaseTab):
                             jahr = str(row.get('Schuljahr', '')).strip()
 
                         if nachname and vorname and nachname != 'nan':
-                            if klasse not in ["MB", "MT", "KI", "WI"]: continue
                             manual_id = None
                             if raw_id and raw_id.lower() != 'nan':
                                 try:
@@ -1021,7 +1179,6 @@ class KlassenTab(BaseTab):
         btn_delete_style = f"QPushButton {{ background: transparent; border: none; font-size: 16px; color: #333333; border-radius: {BUTTON_RADIUS}px; }} QPushButton:hover {{ background-color: #FFCDD2; }}"
 
         for row, klasse in enumerate(data_list):
-
             self.table.setItem(row, 0, self._create_readonly_item(str(klasse[0])))
             self.table.setItem(row, 1, self._create_readonly_item(str(klasse[1])))
             self.table.setItem(row, 2, self._create_readonly_item(str(klasse[2])))
@@ -1229,7 +1386,6 @@ class SchuljahrTab(BaseTab):
 
     def import_jahre(self):
         self.show_popup("Info", "Import-Funktion wird vorbereitet.")
-
 
 
 class BuchlistenTab(BaseTab):
@@ -1464,6 +1620,7 @@ class SchuelerverwaltungWidget(BasePageWidget):
                 if hasattr(self, 'set_breadcrumb'): self.set_breadcrumb(
                     "Startseite > Hauptmenü > Schülerverwaltung > Schüler")
                 if hasattr(self, 'set_page_title'): self.set_page_title("Schülerverwaltung")
+                self.tab_schueler.refresh_filter_lists()
                 self.tab_schueler.refresh_data()
             elif index == 1:
                 if hasattr(self, 'set_breadcrumb'): self.set_breadcrumb(

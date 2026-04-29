@@ -855,8 +855,8 @@ class BuchverwaltungWidget(BasePageWidget):
                         }}
                     """)
 
-                    ja_button = msg.addButton("Ja, hinzufügen", QMessageBox.ButtonRole.YesRole)
-                    nein_button = msg.addButton("Nein, abbrechen", QMessageBox.ButtonRole.NoRole)
+                    ja_button = msg.addButton("Ja", QMessageBox.ButtonRole.YesRole)
+                    nein_button = msg.addButton("Nein", QMessageBox.ButtonRole.NoRole)
 
                     # Der "Nein"-Button bekommt ein graues Styling (Neutral)
                     nein_button.setStyleSheet(f"""
