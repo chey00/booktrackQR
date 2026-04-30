@@ -683,12 +683,28 @@ class DatabaseManager:
             conn.close()
 
     def update_class(self, old_name, old_year, new_name, new_year):
+        """PBI 11.1: Aktualisiert Name und Schuljahr einer Klasse."""
+        # Erst die ID des neuen Schuljahres holen oder anlegen
+        new_sj_id = self.get_or_create_school_year(new_year)
+
+        conn = self._get_connection()
         try:
-            query = "UPDATE klassen SET name = %s, schuljahr = %s WHERE name = %s AND schuljahr = %s"
-            cursor = self.conn.cursor()
-            cursor.execute(query, (new_name, new_year, old_name, old_year))
-            self.conn.commit()
+            with conn.cursor() as cursor:
+                # Wir suchen die Klasse über den alten Namen und das alte Jahr
+                # und aktualisieren sie auf den neuen Namen und die neue Schuljahr-ID
+                query = """
+                    UPDATE Schulklasse 
+                    SET name = %s, schuljahr_id = %s 
+                    WHERE name = %s 
+                    AND schuljahr_id = (SELECT schuljahr_id FROM Schuljahr WHERE jahr = %s LIMIT 1)
+                """
+                cursor.execute(query, (new_name, new_sj_id, old_name, old_year))
+
+            conn.commit()
             return True
         except Exception as e:
             print(f"Fehler beim Update der Klasse: {e}")
+            conn.rollback()
             return False
+        finally:
+            conn.close()
