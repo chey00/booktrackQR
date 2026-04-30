@@ -1226,13 +1226,11 @@ class KlassenTab(BaseTab):
                     self.show_popup("Fehler", "Klasse konnte nicht gespeichert werden.")
 
     def edit_klasse(self, kid):
-        # kid ist bei dir als "Name_Jahr" formatiert
         parts = kid.split('_')
         if len(parts) < 2: return
 
         old_name, old_year = parts[0], parts[1]
 
-        # Dialog öffnen und mit alten Daten füllen
         d = KlassenDialog(self)
         d.setWindowTitle("Klasse bearbeiten")
         d.input_name.setText(old_name)
@@ -1245,7 +1243,7 @@ class KlassenTab(BaseTab):
             if new_name and new_year != "Bitte wählen...":
                 success = self.db_manager.update_class(old_name, old_year, new_name, new_year)
                 if success:
-                    self.filter_table()  # Tabelle neu laden
+                    self.filter_table()
                     self.show_popup("Erfolg", "Klasse wurde aktualisiert.")
                 else:
                     self.show_popup("Fehler", "Update fehlgeschlagen (evtl. Name schon vergeben).")
@@ -1283,8 +1281,40 @@ class KlassenTab(BaseTab):
     def import_klassen(self):
         file_path, _ = QFileDialog.getOpenFileName(
             self, "Klassen importieren", "",
-            "Dateien (*.csv *.xlsx);;Alle Dateien (*.*)"
+            "Excel-Dateien (*.xlsx);;CSV-Dateien (*.csv)"
         )
+        if not file_path:
+            return
+
+        try:
+            import pandas as pd
+            if file_path.endswith('.xlsx'):
+                df = pd.read_excel(file_path)
+            else:
+                df = pd.read_csv(file_path, sep=None, engine='python')
+
+            imported_count = 0
+
+            col_klasse = next((c for c in df.columns if any(x in c.lower() for x in ["klasse", "name"])), None)
+            col_jahr = next((c for c in df.columns if any(x in c.lower() for x in ["jahr", "schuljahr"])), None)
+
+            if not col_klasse or not col_jahr:
+                self.show_popup("Fehler", "Spalten für 'Klasse' und 'Schuljahr' wurden nicht erkannt.")
+                return
+
+            for _, row in df.iterrows():
+                name = str(row[col_klasse]).strip()
+                jahr = str(row[col_jahr]).strip()
+
+                if name and jahr and name.lower() != "nan":
+                    if self.db_manager.add_class(name, jahr):
+                        imported_count += 1
+
+            self.filter_table()
+            self.show_popup("Import erfolgreich", f"{imported_count} Klassen wurden verarbeitet.")
+
+        except Exception as e:
+            self.show_popup("Fehler", f"Der Import ist fehlgeschlagen:\n{e}")
 
 
 class SchuljahrTab(BaseTab):

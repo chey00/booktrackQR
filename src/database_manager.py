@@ -683,15 +683,11 @@ class DatabaseManager:
             conn.close()
 
     def update_class(self, old_name, old_year, new_name, new_year):
-        """PBI 11.1: Aktualisiert Name und Schuljahr einer Klasse."""
-        # Erst die ID des neuen Schuljahres holen oder anlegen
         new_sj_id = self.get_or_create_school_year(new_year)
 
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
-                # Wir suchen die Klasse über den alten Namen und das alte Jahr
-                # und aktualisieren sie auf den neuen Namen und die neue Schuljahr-ID
                 query = """
                     UPDATE Schulklasse 
                     SET name = %s, schuljahr_id = %s 
