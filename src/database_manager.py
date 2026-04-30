@@ -681,3 +681,14 @@ class DatabaseManager:
                 return cursor.rowcount > 0
         finally:
             conn.close()
+
+    def update_class(self, old_name, old_year, new_name, new_year):
+        try:
+            query = "UPDATE klassen SET name = %s, schuljahr = %s WHERE name = %s AND schuljahr = %s"
+            cursor = self.conn.cursor()
+            cursor.execute(query, (new_name, new_year, old_name, old_year))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Fehler beim Update der Klasse: {e}")
+            return False

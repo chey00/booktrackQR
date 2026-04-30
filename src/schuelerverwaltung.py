@@ -1226,7 +1226,29 @@ class KlassenTab(BaseTab):
                     self.show_popup("Fehler", "Klasse konnte nicht gespeichert werden.")
 
     def edit_klasse(self, kid):
-        self.show_popup("Info", f"Bearbeiten-Funktion für {kid} folgt in Kürze.")
+        # kid ist bei dir als "Name_Jahr" formatiert
+        parts = kid.split('_')
+        if len(parts) < 2: return
+
+        old_name, old_year = parts[0], parts[1]
+
+        # Dialog öffnen und mit alten Daten füllen
+        d = KlassenDialog(self)
+        d.setWindowTitle("Klasse bearbeiten")
+        d.input_name.setText(old_name)
+        d.combo_jahr.setCurrentText(old_year)
+
+        if d.exec() == QDialog.DialogCode.Accepted:
+            new_name = d.input_name.text().strip()
+            new_year = d.combo_jahr.currentText()
+
+            if new_name and new_year != "Bitte wählen...":
+                success = self.db_manager.update_class(old_name, old_year, new_name, new_year)
+                if success:
+                    self.filter_table()  # Tabelle neu laden
+                    self.show_popup("Erfolg", "Klasse wurde aktualisiert.")
+                else:
+                    self.show_popup("Fehler", "Update fehlgeschlagen (evtl. Name schon vergeben).")
 
     def delete_klasse(self, kid, klasse_name):
         dialog = StudentDeleteDialog(self, klasse_name)
