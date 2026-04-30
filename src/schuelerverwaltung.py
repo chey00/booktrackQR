@@ -1281,7 +1281,10 @@ class KlassenTab(BaseTab):
                 QMessageBox.warning(self, "Abgelehnt", "Falsches Admin-Passwort!")
 
     def import_klassen(self):
-        self.show_popup("Info", "Import-Schnittstelle wird für MariaDB optimiert.")
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Klassen importieren", "",
+            "Dateien (*.csv *.xlsx);;Alle Dateien (*.*)"
+        )
 
 
 class SchuljahrTab(BaseTab):
