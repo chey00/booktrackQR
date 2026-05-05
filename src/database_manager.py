@@ -508,10 +508,12 @@ class DatabaseManager:
             return False
 
     def delete_class(self, klasse_name, jahr_text):
+        """Löscht eine Klasse mitsamt Schülern und deren aktuellen Ausleihen."""
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
                 cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
+
                 cursor.execute("""
                                SELECT schulklasse_id
                                FROM Schulklasse
@@ -519,13 +521,25 @@ class DatabaseManager:
                                  AND schuljahr_id = (SELECT schuljahr_id FROM Schuljahr WHERE jahr = %s LIMIT 1)
                                """, (klasse_name, jahr_text))
                 res = cursor.fetchone()
+
                 if res:
                     kid = res[0]
-                    cursor.execute(
-                        "DELETE FROM Ausleihe_Aktuell WHERE studierende_id IN (SELECT studierende_id FROM Studierende WHERE schulklasse_id = %s)",
-                        (kid,))
+                    cursor.execute("""
+                        DELETE FROM Ausleihe_Aktuell 
+                        WHERE studierende_id IN (SELECT studierende_id FROM Studierende WHERE schulklasse_id = %s)
+                    """, (kid,))
+
                     cursor.execute("DELETE FROM Studierende WHERE schulklasse_id = %s", (kid,))
+
                     cursor.execute("DELETE FROM Schulklasse WHERE schulklasse_id = %s", (kid,))
+
+                    conn.commit()
+                    return True
+                return False
+        except Exception as e:
+            print(f"DB-Fehler beim Löschen der Klasse: {e}")
+            conn.rollback()
+            return False
         finally:
             with conn.cursor() as cursor:
                 cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
