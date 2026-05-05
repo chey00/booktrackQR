@@ -29,6 +29,9 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QBrush
+import csv
+import datetime
+
 
 from database_manager import DatabaseManager
 from base_page import BasePageWidget
@@ -171,10 +174,10 @@ class StudentDeleteDialog(QDialog):
                      "DEAKTIVIEREN: Schüler verschwindet aus der Liste, bleibt aber als Archiv im System.\n\n"
                      "LÖSCHEN: Schüler wird unwiderruflich gelöscht (Nur mit Admin-Passwort).")
 
-        lbl = QLabel(info_text)
-        lbl.setFont(QFont("Open Sans", 10))
-        lbl.setWordWrap(True)
-        layout.addWidget(lbl)
+        self.label = QLabel(info_text)
+        self.label.setFont(QFont("Open Sans", 10))
+        self.label.setWordWrap(True)
+        layout.addWidget(self.label)
 
         self.pw_input = QLineEdit()
         self.pw_input.setPlaceholderText("Admin-Passwort (nur für endgültiges Löschen)")
@@ -281,6 +284,9 @@ class InactiveStudentsDialog(QDialog):
         self.table = QTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels(["ID", "Nachname", "Vorname", "Klasse", "Aktionen"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
+        self.table.setColumnWidth(4, 280)
+
         self.table.verticalHeader().setVisible(False)
         self.table.setStyleSheet("QTableWidget { gridline-color: #EEE; color: black; background-color: #FFFFFF; }")
         layout.addWidget(self.table)
@@ -326,6 +332,7 @@ class InactiveStudentsDialog(QDialog):
                     display_id = s[0] % 10000
                     safe_jahr = str(s[4]).replace('/', '-')
                     formatted_id = f"{s[3]}_{safe_jahr}_{display_id:03d}"
+                    student_name = f"{s[2]} {s[1]}"
 
                     self.table.setItem(row, 0, QTableWidgetItem(formatted_id))
                     self.table.setItem(row, 1, QTableWidgetItem(str(s[1])))
@@ -346,7 +353,7 @@ class InactiveStudentsDialog(QDialog):
                     btn_delete = QPushButton("Endgültig Löschen")
                     btn_delete.setStyleSheet(
                         table_btn_style + "QPushButton { background-color: #D32F2F; } QPushButton:hover { background-color: #b71c1c; }")
-                    btn_delete.clicked.connect(lambda ch, sid=s[0]: self.final_delete(sid))
+                    btn_delete.clicked.connect(lambda ch, sid=s[0], n=student_name: self.final_delete(sid, n))
 
                     action_layout.addWidget(btn_reactivate)
                     action_layout.addWidget(btn_delete)
@@ -364,11 +371,16 @@ class InactiveStudentsDialog(QDialog):
         finally:
             conn.close()
 
-    def final_delete(self, sid):
-        confirm = DeleteConfirmDialog(self, "Diesen Schüler wirklich permanent löschen?")
-        if confirm.exec() == QDialog.DialogCode.Accepted:
-            self.db_manager.delete_student(sid)
-            self.refresh_data()
+    def final_delete(self, sid, name):
+        dialog = StudentDeleteDialog(self, name)
+        dialog.btn_deactivate.hide()
+        dialog.label.setText(
+            f"Möchten Sie den inaktiven Schüler '{name}' wirklich permanent löschen?\n\nDieser Schritt erfordert das Admin-Passwort.")
+
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            if dialog.result_action == 'delete':
+                self.db_manager.delete_student(sid)
+                self.refresh_data()
 
 
 # ==============================================================================
@@ -404,18 +416,49 @@ class StudentDialog(QDialog):
         self.input_nachname = QLineEdit()
         self.input_nachname.setPlaceholderText("Nachname eingeben")
 
-        # PBI 11.5: Dynamisches Laden aus DB
         self.combo_klasse = QComboBox()
         self.combo_klasse.addItem("Bitte wählen...")
         self.combo_jahr = QComboBox()
         self.combo_jahr.addItem("Bitte wählen...")
 
+        # PBI 11.5: Dynamisches Laden und Filtern der Schuljahre
         if parent and hasattr(parent, 'db_manager'):
+            # Klassen laden
             klassen = parent.db_manager.get_classes()
             klassen_namen = sorted(list(set(k[1] for k in klassen)))
             self.combo_klasse.addItems(klassen_namen)
+
+            # Schuljahre laden
             jahre = parent.db_manager.get_school_years()
-            self.combo_jahr.addItems([str(j[1]) for j in jahre])
+
+            # Filter-Logik: Aktuelles Schuljahr bestimmen (Stichtag 1. August)
+            now = datetime.datetime.now()
+            current_start_year = now.year if now.month >= 8 else now.year - 1
+
+            # Schwellenwert (Minimum-Jahr) festlegen
+            if student_data and len(student_data) > 4:
+                ref_jahr = str(student_data[4])
+                try:
+                    threshold = int(ref_jahr.split('-')[0])
+                    # Wenn wir einen alten Schüler bearbeiten, darf sein altes Jahr nicht verschwinden
+                    threshold = min(threshold, current_start_year)
+                except ValueError:
+                    threshold = current_start_year
+            else:
+                threshold = current_start_year
+
+            # Nur Jahre hinzufügen, die >= dem Schwellenwert sind (aktuelle & zukünftige Jahre)
+            filtered_jahre = []
+            for j in jahre:
+                jahr_str = str(j[1])
+                try:
+                    y_start = int(jahr_str.split('-')[0])
+                    if y_start >= threshold:
+                        filtered_jahre.append(jahr_str)
+                except ValueError:
+                    filtered_jahre.append(jahr_str)
+
+            self.combo_jahr.addItems(sorted(filtered_jahre))
 
         self.id_prefix_label = QLabel("..._..._")
         self.id_prefix_label.setStyleSheet("color: #666666; font-style: italic; font-weight: normal;")
@@ -540,16 +583,41 @@ class KlassenDialog(QDialog):
         self.combo_jahr = QComboBox()
         self.combo_jahr.addItem("Bitte wählen...")
 
+        # PBI 11.5 Filter-Logik für Schuljahre
         if parent and hasattr(parent, 'db_manager'):
             jahre = parent.db_manager.get_school_years()
-            self.combo_jahr.addItems([str(j[1]) for j in jahre])
+
+            now = datetime.datetime.now()
+            current_start_year = now.year if now.month >= 8 else now.year - 1
+
+            if klassen_data and len(klassen_data) > 0:
+                ref_jahr = str(klassen_data[0])  # Index 0 ist das Jahr bei Klassen
+                try:
+                    threshold = int(ref_jahr.split('-')[0])
+                    threshold = min(threshold, current_start_year)
+                except ValueError:
+                    threshold = current_start_year
+            else:
+                threshold = current_start_year
+
+            filtered_jahre = []
+            for j in jahre:
+                jahr_str = str(j[1])
+                try:
+                    y_start = int(jahr_str.split('-')[0])
+                    if y_start >= threshold:
+                        filtered_jahre.append(jahr_str)
+                except ValueError:
+                    filtered_jahre.append(jahr_str)
+
+            self.combo_jahr.addItems(sorted(filtered_jahre))
 
         for w in [self.input_name, self.combo_jahr]:
             w.setFixedWidth(250)
 
         if klassen_data:
             self.input_name.setText(klassen_data[1])
-            self.combo_jahr.setCurrentText(klassen_data[2])
+            self.combo_jahr.setCurrentText(klassen_data[0])
 
         form_layout.addRow(QLabel("Klassenname:"), self.input_name)
         form_layout.addRow(QLabel("Schuljahr:"), self.combo_jahr)
@@ -574,7 +642,7 @@ class SchuljahrDialog(QDialog):
     def __init__(self, parent=None, jahr_data=None):
         super().__init__(parent)
         self.setWindowTitle("Neues Schuljahr" if not jahr_data else "Schuljahr bearbeiten")
-        self.setFixedSize(400, 220)
+        self.setFixedSize(400, 240)
         self.setStyleSheet(f"""
             QDialog {{ background-color: #FFFFFF; }}
             QLabel {{ color: #333333; font-weight: bold; }}
@@ -600,8 +668,13 @@ class SchuljahrDialog(QDialog):
         if jahr_data:
             self.input_name.setText(jahr_data[1])
 
+        self.error_label = QLabel("Bitte ein Schuljahr eingeben!")
+        self.error_label.setStyleSheet("color: #D32F2F; font-size: 12px; font-style: italic;")
+        self.error_label.hide()
+
         form_layout.addRow(QLabel("Schuljahr:"), self.input_name)
         layout.addLayout(form_layout)
+        layout.addWidget(self.error_label)
         layout.addStretch()
 
         btn_layout = QHBoxLayout()
@@ -609,14 +682,24 @@ class SchuljahrDialog(QDialog):
         self.btn_save = QPushButton("Speichern")
         self.btn_cancel.setStyleSheet(get_btn_style("#E0E0E0", "#333333"))
         self.btn_save.setStyleSheet(get_btn_style("#F1BD4D"))
+
         self.btn_cancel.clicked.connect(self.reject)
-        self.btn_save.clicked.connect(self.accept)
+        # NEU: Eigene Validierungsmethode vor dem Schließen aufrufen
+        self.btn_save.clicked.connect(self.validate_and_save)
 
         btn_layout.addStretch()
         btn_layout.addWidget(self.btn_cancel)
         btn_layout.addWidget(self.btn_save)
         layout.addLayout(btn_layout)
 
+    def validate_and_save(self):
+        if not self.input_name.text().strip():
+            self.input_name.setStyleSheet(f"border: 2px solid #D32F2F; border-radius: {BUTTON_RADIUS}px;")
+            self.error_label.show()
+        else:
+            self.error_label.hide()
+            self.input_name.setStyleSheet("")
+            self.accept()
 
 # ==============================================================================
 # TABS
@@ -1001,6 +1084,7 @@ class SchuelerTab(BaseTab):
                             jahr = str(row[j_idx]).strip()
 
                             if not vorname or not nachname: continue
+                            if klasse not in ["MB", "MT", "KI", "WI"]: continue
 
                             manual_id = None
                             if raw_id:
@@ -1048,6 +1132,7 @@ class SchuelerTab(BaseTab):
                             jahr = str(row.get('Schuljahr', '')).strip()
 
                         if nachname and vorname and nachname != 'nan':
+                            if klasse not in ["MB", "MT", "KI", "WI"]: continue
                             manual_id = None
                             if raw_id and raw_id.lower() != 'nan':
                                 try:
@@ -1402,45 +1487,40 @@ class SchuljahrTab(BaseTab):
         if d.exec() == QDialog.DialogCode.Accepted:
             name = d.input_name.text().strip()
             if name and self.db_manager:
-                self.db_manager.add_school_year(name)
-                self.filter_table()
+                try:
+                    success = self.db_manager.add_school_year(name)
+                    # FIX: Strikte Prüfung. Nur wenn wirklich True oder eine ID zurückkommt, ist es ein Erfolg.
+                    if success:
+                        self.filter_table()
+                        self.show_popup("Erfolg", f"Das Schuljahr '{name}' wurde erfolgreich angelegt!")
+                    else:
+                        self.show_popup("Fehler", f"Das Schuljahr '{name}' konnte nicht in die Datenbank geschrieben werden.\nMöglicherweise existiert es bereits oder es gab einen Datenbankfehler (z.B. falsches Format).")
+                except Exception as e:
+                    self.show_popup("Fehler", f"Es gab ein Problem mit der Datenbank:\n{e}")
 
     def delete_jahr(self, jid, jahr_name):
         dialog = StudentDeleteDialog(self, jahr_name)
-        dialog.setWindowTitle("Schuljahr verwalten")
 
         if hasattr(dialog, 'btn_deactivate'):
-            dialog.btn_deactivate.show()
+            dialog.btn_deactivate.hide()
 
         if hasattr(dialog, 'label'):
-            dialog.label.setText(f"Was möchten Sie mit dem Schuljahr '{jahr_name}' tun?")
+            dialog.label.setText(f"Möchten Sie das Schuljahr '{jahr_name}' wirklich löschen?\n\n"
+                                 f"ACHTUNG: Dadurch werden auch alle zugeordeten Klassen und "
+                                 f"Schüler unwiderruflich entfernt!")
 
-        for label in dialog.findChildren(QLabel):
-            t = label.text()
-            if "Schüler" in t:
-                label.setText(t.replace("Schüler", "Schuljahr"))
-
-        result = dialog.exec()
-
-        if result in [QDialog.DialogCode.Accepted, 999]:
+        if dialog.exec() == QDialog.DialogCode.Accepted:
             if dialog.pw_input.text() == "admin123":
                 try:
-                    if result == QDialog.DialogCode.Accepted:
-                        self.db_manager.delete_school_year(jid)
-                        msg = f"Schuljahr {jahr_name} wurde gelöscht."
-                    else:
-                        msg = f"Schuljahr {jahr_name} wurde deaktiviert."
-
+                    self.db_manager.delete_school_year(jid)
                     self.filter_table()
                     if hasattr(self, 'show_popup'):
-                        self.show_popup("Erfolg", msg)
-
+                        self.show_popup("Erfolg", f"Schuljahr {jahr_name} wurde gelöscht.")
                 except Exception as e:
-                    print(f"Fehler: {e}")
+                    self.show_popup("Fehler", f"Fehler beim Löschen:\n{e}")
             else:
                 from PyQt6.QtWidgets import QMessageBox
                 QMessageBox.warning(self, "Abgelehnt", "Falsches Admin-Passwort!")
-
 
     def import_jahre(self):
         self.show_popup("Info", "Import-Funktion wird vorbereitet.")
