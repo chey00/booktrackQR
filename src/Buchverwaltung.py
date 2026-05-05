@@ -12,6 +12,8 @@
 # - PBI 11.10: Fenster breiter gemacht & Kamera-Symbol im Bearbeitungsmodus entfernt
 # - PBI 11.11: Manuellen "Daten suchen"-Button (🔄) ergänzt
 # - PBI 11.12: Pop-up Fenster bei doppelter ISBN eingebaut (Pro Design)
+# - PBI 11.13: QR-Code Generierung und Pop-Up hinzugefügt (ohne pip install, via API)
+#              + Eigenes Projekt-Icon (booktrackQR.png) für den Button integriert
 #
 # Refactoring-Hinweis:
 # - Header, Breadcrumb, Seitentitel und Footer werden jetzt zentral
@@ -20,16 +22,17 @@
 #   konsistent mit den anderen GUI-Ansichten.
 # ------------------------------------------------------------------------------
 
+import os  # NEU: Für die Dateipfad-Erkennung des Icons
 import requests  # Import für die Google Books & OpenLibrary API (Mustafa & Ahmet)
 import re  # Import für Datums-Extraktion
 from PyQt6.QtWidgets import (
     QPushButton, QVBoxLayout, QLabel, QHBoxLayout,
     QTableWidget, QTableWidgetItem, QHeaderView, QLineEdit,
     QDialog, QFormLayout, QComboBox, QWidget, QApplication,
-    QMessageBox  # Hinzugefügt für das Pop-up Fenster
+    QMessageBox, QFileDialog
 )
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QFont
+from PyQt6.QtCore import Qt, QTimer, QSize  # NEU: QSize hinzugefügt
+from PyQt6.QtGui import QFont, QPixmap, QImage, QIcon  # NEU: QIcon hinzugefügt
 
 from loading_widgets import LoadingTableStack
 from database_manager import DatabaseManager
@@ -240,6 +243,105 @@ class DeleteConfirmDialog(QDialog):
         btn_layout.addWidget(self.btn_no)
         btn_layout.addWidget(self.btn_yes)
         layout.addLayout(btn_layout)
+
+
+# ==============================================================================
+# NEU PBI 11.13: QRDialog (Ohne externe pip-Module, nutzt Online-API)
+# Zweck: Pop-Up Fenster zur Anzeige und zum Speichern des QR-Codes
+# ==============================================================================
+class QRDialog(QDialog):
+    def __init__(self, isbn, title, parent=None):
+        super().__init__(parent)
+        self.isbn = isbn
+        self.book_title = title
+
+        self.setWindowTitle("QR-Code generiert")
+        self.setFixedSize(400, 500)
+        self.setStyleSheet("background-color: #FFFFFF; color: #000000;")
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        # Titel Label
+        info_label = QLabel(f"<b>QR-Code für:</b><br>{self.book_title}<br>ISBN: {self.isbn}")
+        info_label.setFont(QFont("Open Sans", 11))
+        info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(info_label)
+
+        # QR Code generieren (über API)
+        self.qr_image = self.generate_qr_code(self.isbn)
+
+        # Bild Label
+        self.image_label = QLabel()
+        self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        if self.qr_image:
+            self.image_label.setPixmap(self.qr_image)
+        else:
+            self.image_label.setText("Bitte Internetverbindung prüfen.\nQR-Code konnte nicht geladen werden.")
+            self.image_label.setStyleSheet("color: red; font-weight: bold;")
+
+        layout.addWidget(self.image_label)
+        layout.addStretch()
+
+        # Speichern & Schließen Buttons
+        btn_layout = QHBoxLayout()
+
+        self.btn_save = QPushButton("💾 Speichern / Drucken")
+        self.btn_save.setStyleSheet(primary_button_style("#5CB1D6"))
+        self.btn_save.clicked.connect(self.save_qr_code)
+
+        # Button deaktivieren, falls kein Bild geladen wurde
+        if not self.qr_image:
+            self.btn_save.setEnabled(False)
+
+        self.btn_close = QPushButton("Schließen")
+        self.btn_close.setStyleSheet(neutral_button_style())
+        self.btn_close.clicked.connect(self.accept)
+
+        btn_layout.addWidget(self.btn_close)
+        btn_layout.addWidget(self.btn_save)
+        layout.addLayout(btn_layout)
+
+    def generate_qr_code(self, data):
+        """Holt den QR Code über eine kostenlose API (erfordert nur das bereits vorhandene 'requests')."""
+        try:
+            # Wir nutzen eine verlässliche, kostenlose API für QR-Codes
+            api_url = f"https://api.qrserver.com/v1/create-qr-code/?size=250x250&data={data}"
+
+            # API aufrufen
+            response = requests.get(api_url, timeout=5)
+
+            if response.status_code == 200:
+                # Bilddaten aus der Antwort in ein PyQt QPixmap umwandeln
+                img_data = response.content
+                qimg = QImage.fromData(img_data)
+                return QPixmap.fromImage(qimg)
+            else:
+                return None
+        except Exception as e:
+            print(f"Fehler bei API-Abfrage: {e}")
+            return None
+
+    def save_qr_code(self):
+        """Öffnet einen Dialog zum lokalen Speichern des Bildes."""
+        if not self.qr_image:
+            return
+
+        # Sinnvoller Dateiname generieren: "QR_<ISBN>_<Titel>.png"
+        safe_title = "".join([c for c in self.book_title if c.isalnum() or c == ' ']).strip()
+        safe_title = safe_title.replace(' ', '_')
+        default_name = f"QR_{self.isbn}_{safe_title}.png"
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "QR-Code lokal speichern",
+            default_name,
+            "Bilder (*.png)"
+        )
+
+        if file_path:
+            self.qr_image.save(file_path, "PNG")
 
 
 # ==============================================================================
@@ -594,19 +696,10 @@ class BookDialog(QDialog):
 # ==============================================================================
 # Batuhan: BuchverwaltungWidget
 # Zweck: Hauptseite der Buchverwaltung
-# - Actionbar: Suche + "Sortieren nach" Dropdown + Button "Buch hinzufügen"
-# - Tabelle mit Bestand (+/-) und Aktionen (Bearbeiten/Löschen)
-# - Suchlogik + Sortierlogik (Titel/Verlag/Auflage)
 #
 # Ahmet Toplar (Bugfix PBI 11.12):
 # - Pop-up Fenster bei doppelter ISBN eingebaut
 # - Bestandsabfrage (Ja/Nein) mit direkter Datenbank-Aktualisierung integriert
-#
-# Refactoring-Hinweis:
-# - Das Widget erbt jetzt von BasePageWidget.
-# - Header, Breadcrumb, Seitentitel und Footer werden nicht mehr lokal
-#   aufgebaut, sondern zentral bereitgestellt.
-# - Der eigentliche Seiteninhalt wird nur noch in self.content_layout eingefügt.
 # ==============================================================================
 class BuchverwaltungWidget(BasePageWidget):
     COLOR = "#5CB1D6"
@@ -621,13 +714,6 @@ class BuchverwaltungWidget(BasePageWidget):
 
         self.db_manager = DatabaseManager()  # Initialisiert den Datenbank-Motor by René, Georg, Denis
 
-        # ---------------------------
-        # Layout-Grundstruktur
-        # Hinweis:
-        # - Header/Breadcrumb/Footer werden jetzt zentral von BasePageWidget
-        #   erzeugt und müssen hier nicht mehr separat erstellt werden.
-        # ---------------------------
-
         # ================= ACTION BAR =================
         # Suche + Sortieren-nach Dropdown + Button "Buch hinzufügen"
         action_layout = QHBoxLayout()
@@ -640,7 +726,6 @@ class BuchverwaltungWidget(BasePageWidget):
         self.search_input.setStyleSheet(input_style(self.COLOR))
         action_layout.addWidget(self.search_input)
 
-        # >>> ÄNDERUNG: statt Verlag-Filter jetzt Sortierungsauswahl <<<
         self.sort_combo = QComboBox()
         self.sort_combo.addItems(["Sortieren nach: ISBN", "Titel", "Verlag", "Auflage"])
         self.sort_combo.setFixedWidth(200)
@@ -701,11 +786,11 @@ class BuchverwaltungWidget(BasePageWidget):
         self.table.setColumnWidth(4, 180)
 
         header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)  # Aktionen
-        self.table.setColumnWidth(5, 150)
+        # PBI 11.13: Spalte verbreitert, da wir nun 3 Buttons haben! (QR, Bearbeiten, Löschen)
+        self.table.setColumnWidth(5, 200)
 
         # René Bezold, Georg Zinn:
         # Lade-Widget, damit nicht sofort die leere Tabelle angezeigt wird
-        # (sondern erst "Daten werden geladen" + Spinner)
         self.data_stack = LoadingTableStack(self.table, retry_callback=self.filter_table)
         self.content_layout.addWidget(self.data_stack)
 
@@ -767,7 +852,7 @@ class BuchverwaltungWidget(BasePageWidget):
         self.table.setCellWidget(row, 4, stock_widget)
 
     # --------------------------------------------------------------------------
-    # Aktionen-Widget (Bearbeiten/Löschen)
+    # Aktionen-Widget (QR/Bearbeiten/Löschen)
     # --------------------------------------------------------------------------
     def _set_actions_widget(self, row, isbn):
         bg_color = "#F9F9F9" if row % 2 != 0 else "#FFFFFF"
@@ -777,8 +862,22 @@ class BuchverwaltungWidget(BasePageWidget):
 
         action_layout = QHBoxLayout(action_widget)
         action_layout.setContentsMargins(5, 0, 5, 0)
-        action_layout.setSpacing(15)
+        action_layout.setSpacing(10)  # PBI 11.13: Spacing etwas verkleinert, damit alle 3 Buttons gut reinpassen
         action_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        # NEU PBI 11.13: QR Button (Jetzt mit eigenem Icon statt Emoji)
+        btn_qr = QPushButton()
+        btn_qr.setFixedSize(45, 45)
+
+        # Den genauen Pfad zum Bild ermitteln (1 Ordner hoch "src" -> dann "pic")
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        icon_path = os.path.join(base_dir, "..", "pic", "booktrackQR.png")
+
+        btn_qr.setIcon(QIcon(icon_path))
+        btn_qr.setIconSize(QSize(28, 28))  # Größe des Icons im Button anpassen (etwas kleiner als Button selbst)
+        btn_qr.setStyleSheet(icon_button_style("#E0E0E0"))
+        btn_qr.setToolTip("QR-Code anzeigen & drucken")
+        btn_qr.clicked.connect(lambda ch, x=isbn: self.show_qr_popup(x))
 
         btn_edit = QPushButton("✏️")
         btn_edit.setFixedSize(45, 45)
@@ -790,10 +889,25 @@ class BuchverwaltungWidget(BasePageWidget):
         btn_delete.setStyleSheet(icon_button_style("#FFCDD2"))
         btn_delete.clicked.connect(lambda ch, x=isbn: self.delete_book(x))
 
+        action_layout.addWidget(btn_qr)  # Fügt den QR Button links neben Edit hinzu
         action_layout.addWidget(btn_edit)
         action_layout.addWidget(btn_delete)
 
         self.table.setCellWidget(row, 5, action_widget)
+
+    # ==========================================================================
+    # NEU PBI 11.13: Methode zum Öffnen des QR-Popups
+    # ==========================================================================
+    def show_qr_popup(self, isbn):
+        # Holt den Titel aus der Tabelle (Spalte 1), damit er im PopUp angezeigt werden kann
+        book_title = "Unbekanntes Buch"
+        for row in range(self.table.rowCount()):
+            if self.table.item(row, 0).text() == isbn:
+                book_title = self.table.item(row, 1).text()
+                break
+
+        dialog = QRDialog(isbn, book_title, self)
+        dialog.exec()
 
     # --------------------------------------------------------------------------
     # HILFSFUNKTION FÜR PBI 11.12: Prüft, ob ein Buch bereits existiert
@@ -855,8 +969,8 @@ class BuchverwaltungWidget(BasePageWidget):
                         }}
                     """)
 
-                    ja_button = msg.addButton("Ja", QMessageBox.ButtonRole.YesRole)
-                    nein_button = msg.addButton("Nein", QMessageBox.ButtonRole.NoRole)
+                    ja_button = msg.addButton("Ja", QMessageBox.ButtonRole.ActionRole)
+                    nein_button = msg.addButton("Nein", QMessageBox.ButtonRole.ActionRole)
 
                     # Der "Nein"-Button bekommt ein graues Styling (Neutral)
                     nein_button.setStyleSheet(f"""
