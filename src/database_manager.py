@@ -601,26 +601,57 @@ class DatabaseManager:
             conn.close()
 
     def delete_school_year(self, jid):
+        """
+        Löscht ein komplettes Schuljahr sowie alle damit verknüpften Daten:
+        KlassenBuchlisten, Ausleihen, Schüler und Klassen.
+        """
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
                 cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
 
-                cursor.execute("SELECT schulklasse_id FROM Schulklasse WHERE schuljahr_id = %s", (jid,))
+                cursor.execute("SELECT jahr FROM Schuljahr WHERE schuljahr_id = %s", (jid,))
+                res = cursor.fetchone()
+                if not res:
+                    return False
+                jahr_name = res[0]
+
+                cursor.execute("SELECT schulklasse_id, name FROM Schulklasse WHERE schuljahr_id = %s", (jid,))
                 klassen_rows = cursor.fetchall()
 
                 for k in klassen_rows:
-                    kid = k[0]
-                    cursor.execute(
-                        "DELETE FROM Ausleihe_Aktuell WHERE studierende_id IN (SELECT studierende_id FROM Studierende WHERE schulklasse_id = %s)",
-                        (kid,))
+                    kid, kname = k[0], k[1]
+
+                    cursor.execute("""
+                        DELETE FROM Ausleihe_Aktuell 
+                        WHERE studierende_id IN (SELECT studierende_id FROM Studierende WHERE schulklasse_id = %s)
+                    """, (kid,))
+
                     cursor.execute("DELETE FROM Studierende WHERE schulklasse_id = %s", (kid,))
 
+                    cursor.execute("""
+                        DELETE FROM KlassenBuchliste 
+                        WHERE klasse_name = %s AND schuljahr = %s
+                    """, (kname, jahr_name))
+
                 cursor.execute("DELETE FROM Schulklasse WHERE schuljahr_id = %s", (jid,))
+
                 cursor.execute("DELETE FROM Schuljahr WHERE schuljahr_id = %s", (jid,))
+
+                conn.commit()
+                return True
+
+        except Exception as e:
+            print(f"Schwerwiegender Fehler beim Löschen des Schuljahres {jid}: {e}")
+            if conn:
+                conn.rollback()
+            return False
         finally:
-            with conn.cursor() as cursor:
-                cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
+            try:
+                with conn.cursor() as cursor:
+                    cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
+            except:
+                pass
             conn.close()
 
     def get_active_loans_for_student(self, qr_id):

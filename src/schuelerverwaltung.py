@@ -1504,10 +1504,17 @@ class SchuljahrTab(BaseTab):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             if dialog.pw_input.text() == "admin123":
                 try:
-                    self.db_manager.delete_school_year(jid)
-                    self.filter_table()
-                    if hasattr(self, 'show_popup'):
+                    success = self.db_manager.delete_school_year(jid)
+
+                    if success:
+                        self.filter_table()
+
+                        if hasattr(self, 'refresh_year_filter'):
+                            self.refresh_year_filter()
+
                         self.show_popup("Erfolg", f"Schuljahr {jahr_name} wurde gelöscht.")
+                    else:
+                        self.show_popup("Fehler", "Die Datenbank hat das Löschen verweigert.")
                 except Exception as e:
                     self.show_popup("Fehler", f"Fehler beim Löschen:\n{e}")
             else:
