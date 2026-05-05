@@ -1335,33 +1335,25 @@ class KlassenTab(BaseTab):
 
     def delete_klasse(self, kid, klasse_name):
         dialog = StudentDeleteDialog(self, klasse_name)
-        dialog.setWindowTitle("Klasse verwalten")
+        dialog.setWindowTitle("Klasse löschen")
 
-        if hasattr(dialog, 'label'):
-            dialog.label.setText(f"Was möchten Sie mit der Klasse '{klasse_name}' tun?")
-
-        for label in dialog.findChildren(QLabel):
-            if "Schüler" in label.text():
-                label.setText(label.text().replace("Schüler", "Klasse"))
-
-        if hasattr(dialog, 'btn_deactivate'):
-            dialog.btn_deactivate.show()
-
-        result = dialog.exec()
-
-        if result == QDialog.DialogCode.Accepted:
+        if dialog.exec() == QDialog.DialogCode.Accepted:
             if dialog.pw_input.text() == "admin123":
                 try:
                     parts = kid.split('_')
                     if len(parts) >= 2:
                         k_name, k_jahr = parts[0], parts[1]
-                        self.db_manager.delete_class(k_name, k_jahr)
-                        self.filter_table()
+
+                        success = self.db_manager.delete_class(k_name, k_jahr)
+
+                        if success:
+                            self.filter_table()  # Tabelle neu zeichnen
+                            self.refresh_year_filter()  # Dropdown oben rechts aktualisieren
+                            self.show_popup("Erfolg", f"Klasse '{k_name}' gelöscht.")
+                        else:
+                            self.show_popup("Fehler", "Löschen in der DB fehlgeschlagen.")
                 except Exception as e:
                     print(f"Fehler beim Löschen der Klasse: {e}")
-            else:
-                from PyQt6.QtWidgets import QMessageBox
-                QMessageBox.warning(self, "Abgelehnt", "Falsches Admin-Passwort!")
 
     def import_klassen(self):
         file_path, _ = QFileDialog.getOpenFileName(
@@ -1512,10 +1504,17 @@ class SchuljahrTab(BaseTab):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             if dialog.pw_input.text() == "admin123":
                 try:
-                    self.db_manager.delete_school_year(jid)
-                    self.filter_table()
-                    if hasattr(self, 'show_popup'):
+                    success = self.db_manager.delete_school_year(jid)
+
+                    if success:
+                        self.filter_table()
+
+                        if hasattr(self, 'refresh_year_filter'):
+                            self.refresh_year_filter()
+
                         self.show_popup("Erfolg", f"Schuljahr {jahr_name} wurde gelöscht.")
+                    else:
+                        self.show_popup("Fehler", "Die Datenbank hat das Löschen verweigert.")
                 except Exception as e:
                     self.show_popup("Fehler", f"Fehler beim Löschen:\n{e}")
             else:
