@@ -14,6 +14,7 @@
 # - PBI 11.12: Pop-up Fenster bei doppelter ISBN eingebaut (Pro Design)
 # - PBI 11.13: QR-Code Generierung und Pop-Up hinzugefügt (ohne pip install, via API)
 #              + Eigenes Projekt-Icon (booktrackQR.png) für den Button integriert
+#              + Dateiname beim Speichern an das System-Format angepasst (QR_BOOK_...)
 #
 # Refactoring-Hinweis:
 # - Header, Breadcrumb, Seitentitel und Footer werden jetzt zentral
@@ -25,6 +26,8 @@
 import os  # NEU: Für die Dateipfad-Erkennung des Icons
 import requests  # Import für die Google Books & OpenLibrary API (Mustafa & Ahmet)
 import re  # Import für Datums-Extraktion
+import datetime  # NEU: Für den Zeitstempel im Dateinamen beim QR-Code speichern
+
 from PyQt6.QtWidgets import (
     QPushButton, QVBoxLayout, QLabel, QHBoxLayout,
     QTableWidget, QTableWidgetItem, QHeaderView, QLineEdit,
@@ -324,14 +327,16 @@ class QRDialog(QDialog):
             return None
 
     def save_qr_code(self):
-        """Öffnet einen Dialog zum lokalen Speichern des Bildes."""
+        """Öffnet einen Dialog zum lokalen Speichern des Bildes im geforderten Format."""
         if not self.qr_image:
             return
 
-        # Sinnvoller Dateiname generieren: "QR_<ISBN>_<Titel>.png"
-        safe_title = "".join([c for c in self.book_title if c.isalnum() or c == ' ']).strip()
-        safe_title = safe_title.replace(' ', '_')
-        default_name = f"QR_{self.isbn}_{safe_title}.png"
+        # Zeitstempel generieren im Format: YYYYMMDD_HHMMSS (z.B. 20260303_172332)
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        # Name exakt so generieren wie im Screenshot: QR_BOOK_<ISBN>_<Zähler>_<DatumUhrzeit>.png
+        # Da wir hier keinen spezifischen Zähler aus der DB haben, nutzen wir "00001"
+        default_name = f"QR_BOOK_{self.isbn}_00001_{timestamp}.png"
 
         file_path, _ = QFileDialog.getSaveFileName(
             self,
@@ -1100,3 +1105,4 @@ class BuchverwaltungWidget(BasePageWidget):
         super().showEvent(event)
         # Ruft die bestehende Lade-Logik auf
         self.filter_table()
+
