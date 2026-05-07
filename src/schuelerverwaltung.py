@@ -7,6 +7,13 @@
 # Sprint 5 Autor: Mustafa Demiral (Soft-Delete & Admin-Löschung für Schüler)
 # Sprint 8 Autoren: Mustafa Demiral, Ahmet Toplar (PBI 10.3 & 10.3.1: Buchlisten anlegen)
 # Sprint 9 Autor: Mustafa Demiral (PBI 11.6 & 11.9: Bugfixes + Anti-Absturz-Logik)
+# Sprint 9/10 Autor: Ahmet Toplar (Bugfixes & Features):
+# # - PBI 11.10: Fenster breiter gemacht & Kamera-Symbol im Bearbeitungsmodus entfernt
+# # - PBI 11.11: Manuellen "Daten suchen"-Button (🔄) ergänzt
+# # - PBI 11.12: Pop-up Fenster bei doppelter ISBN eingebaut (Pro Design)
+# # - PBI 11.13: QR-Code Generierung und Pop-Up hinzugefügt (ohne pip install, via API)
+# #              + Eigenes Projekt-Icon (booktrackQR.png) für den Button integriert
+# #              + Dateiname beim Speichern an das System-Format angepasst (QR_BOOK_...)
 # Sprint 10 Update:
 # - PBI 11.5: Dynamische Schuljahre & Klassen in Dialogen (Synchron mit Schuljahrverwaltung)
 # - PBI 11.3: Archiv-Ansicht für inaktive Schüler integriert
